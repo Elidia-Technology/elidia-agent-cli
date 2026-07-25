@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import logging
 from collections.abc import Callable
 from enum import IntEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from elidia.config.settings import PermissionConfig
 from elidia.permissions.audit import AuditLogger
+
+if TYPE_CHECKING:
+    from elidia.permissions.trust import TrustEngine
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +63,13 @@ class PermissionManager:
         config: PermissionConfig,
         audit: AuditLogger,
         prompt_fn: Callable[[str], bool] | None = None,
+        trust_engine: TrustEngine | None = None,
     ):
         logger.debug("Entered into PermissionManager.__init__")
         self._config = config
         self._audit = audit
         self._prompt_fn = prompt_fn
+        self._trust = trust_engine
         self._session_approvals: set[str] = set()
         self._project_root: Path | None = None
 
@@ -133,6 +141,14 @@ class PermissionManager:
             return True
 
         if tier == PermissionTier.SESSION:
+            # Check progressive trust — promoted actions skip prompt
+            if self._trust and self._trust.is_promoted(classified):
+                self._audit.log_permission_check(
+                    action=classified, tier=2, approved=True,
+                    method="trust_promoted", session_id=session_id,
+                )
+                return True
+
             if classified in self._session_approvals:
                 self._audit.log_permission_check(
                     action=classified, tier=2, approved=True,
@@ -165,6 +181,14 @@ class PermissionManager:
     ) -> bool:
         logger.debug(f"Entered into _ask_permission: action={action}, tier={tier}")
 
+        # Check if trust has promoted this action (applies to SESSION + EVERY_TIME)
+        if self._trust and self._trust.is_promoted(action):
+            self._audit.log_permission_check(
+                action=action, tier=tier, approved=True,
+                method="trust_promoted", session_id=session_id,
+            )
+            return True
+
         if not self._prompt_fn:
             self._audit.log_permission_check(
                 action=action, tier=tier, approved=False,
@@ -177,6 +201,10 @@ class PermissionManager:
 
         if approved and tier == PermissionTier.SESSION:
             self._session_approvals.add(action)
+
+        # Record decision for progressive trust learning
+        if self._trust:
+            self._trust.record_decision(action, approved)
 
         self._audit.log_permission_check(
             action=action, tier=tier, approved=approved,

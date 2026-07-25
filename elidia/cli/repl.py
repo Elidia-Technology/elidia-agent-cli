@@ -142,14 +142,15 @@ class ElidiaRepl:
         self._audit = AuditLogger()
         self._audit.open()
 
+        self._trust_engine = TrustEngine(config=self._config.permissions)
+
         self._permission_mgr = PermissionManager(
             config=self._config.permissions,
             audit=self._audit,
             prompt_fn=self._prompt_user_permission,
+            trust_engine=self._trust_engine,
         )
         self._permission_mgr.set_project_root(Path.cwd())
-
-        self._trust_engine = TrustEngine(config=self._config.permissions)
 
         self._mcp_registry = MCPRegistry()
         try:
