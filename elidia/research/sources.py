@@ -1,9 +1,21 @@
 """Research data sources — wires MCP servers and built-in tools for research.
 
 Provides a unified search interface that queries multiple sources in parallel:
-  - Built-in web search (DuckDuckGo)
+  - Built-in web search (DuckDuckGo, Tavily)
   - MCP servers (SearXNG, Wikipedia, YouTube, etc.)
   - RAG engine (local documents)
+
+Source categories per plan:
+  Academic: arxiv, pubmed, semantic_scholar, wikipedia
+  Legal: Legal Data Hunter (needs MCP server — see mcp.json)
+  Financial: sec_edgar, fred, yahoo_finance, coingecko (needs API keys)
+  News: gnews, newsdata
+  Web: duckduckgo, searxng, crawl4ai, web_browser
+  Trends: google_trends (needs API key)
+  Social: youtube, hackernews
+  Policy: think_tank, wayback
+  Maps: openstreetmap
+  Weather: open_meteo (needs API key)
 """
 from __future__ import annotations
 
@@ -19,12 +31,39 @@ from elidia.tools.base import ToolRegistry
 logger = logging.getLogger(__name__)
 
 MCP_SEARCH_SOURCES: list[tuple[str, str, str]] = [
+    # Academic
+    ("arxiv", "arxiv_search", "arXiv"),
+    ("pubmed", "pubmed_search", "PubMed"),
+    ("semantic_scholar", "semantic_scholar_search", "Semantic Scholar"),
+    ("wikipedia_research", "wiki_search", "Wikipedia"),
+    # Legal (requires Legal Data Hunter MCP server in mcp.json)
+    # ("legal_data_hunter", "ldh_search", "Legal Data Hunter"),
+    # Financial (requires API keys)
+    # ("sec_edgar", "edgar_search", "SEC Edgar"),
+    # ("fred", "fred_search", "FRED"),
+    # ("yahoo_finance", "yahoo_search", "Yahoo Finance"),
+    # ("coingecko", "coingecko_search", "CoinGecko"),
+    # News
+    ("gnews", "gnews_search", "Google News"),
+    ("newsdata", "newsdata_search", "NewsData.io"),
+    # Web
     ("searxng", "sx_search", "SearXNG"),
     ("duckduckgo_research", "ddg_search", "DuckDuckGo"),
-    ("wikipedia_research", "wiki_search", "Wikipedia"),
+    ("crawl4ai", "crawl4ai_search", "Crawl4AI"),
+    ("web_browser", "web_browser_search", "Web Browser"),
+    # Trends (requires API key)
+    # ("google_trends", "trends_search", "Google Trends"),
+    # Social
     ("youtube_research", "youtube_search", "YouTube"),
-    ("gnews", "gnews_search", "Google News"),
-    ("arxiv", "arxiv_search", "arXiv"),
+    ("hackernews", "hn_search", "Hacker News"),
+    # Policy
+    ("think_tank", "thinktank_search", "Think Tank"),
+    ("wayback", "wayback_search", "Wayback Machine"),
+    # Maps
+    ("openstreetmap", "osm_search", "OpenStreetMap"),
+    # Weather (requires API key)
+    # ("open_meteo", "meteo_search", "Open Meteo"),
+    # Code
     ("github_research", "github_search", "GitHub"),
 ]
 
