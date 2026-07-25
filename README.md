@@ -1,59 +1,148 @@
-# Elidia CLI
+<p align="center">
+  <h1 align="center">Elidia CLI</h1>
+  <p align="center"><strong>Universal AI Agent for your terminal</strong></p>
+  <p align="center">
+    Write code, search the web, manage files, run research, generate creative content — all from the command line.
+  </p>
+  <p align="center">
+    <a href="https://pypi.org/project/elidia-cli/"><img src="https://img.shields.io/pypi/v/elidia-cli?color=blue" alt="PyPI"></a>
+    <a href="https://pypi.org/project/elidia-cli/"><img src="https://img.shields.io/pypi/pyversions/elidia-cli" alt="Python"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Proprietary-red" alt="License"></a>
+  </p>
+</p>
 
-Universal AI Agent for your terminal. Write code, search the web, manage files, run research — all from the command line.
+---
 
-## Features
+## What is Elidia?
 
-- **Multi-model chat** — 30+ models via AiUtils Developer API (Claude, GPT, Gemini, DeepSeek, Llama, Qwen)
-- **Agent loop** — route → act → observe → reflect with automatic tool calling
-- **Built-in tools** — file system, git, terminal, web search, HTTP fetch
-- **MCP integration** — connect any MCP server for extended tool access
-- **Memory & RAG** — persistent memory with vector search (sqlite-vec, 1024-dim)
-- **Mode classification** — automatic routing to Direct, Deep Think, Consensus, or Autonomous modes
-- **Research pipeline** — 5-stage YOYO pipeline: Decompose → Search → Analyze → Synthesize → Verify
-- **Creative generation** — image, video, audio, music via API or local models
-- **Workflow engine** — YAML-defined pipelines with conditions, loops, and parallelism
-- **Budget governance** — session cost limits, pre-execution estimation, auto-downgrade
-- **Configurable themes** — dark, light, ocean, sunset, minimal, or custom
-- **4-tier permissions** — AUTO → SESSION → EVERY_TIME → NEVER with progressive trust
+Elidia is a powerful terminal-based AI agent that connects you to **30+ language models** through a single interface. It goes beyond simple chat — Elidia can execute tools, run multi-model consensus, conduct deep research, generate images/video/audio, and orchestrate complex workflows — all from your terminal.
 
-## Install
+Powered by the [AiUtils Developer API](https://developer.aiutils.io), Elidia gives you access to models from OpenAI, Anthropic, Google, DeepSeek, Meta, Alibaba, and more — with a single API key.
+
+## Key Features
+
+### Multi-Model Intelligence
+- **30+ models** — Claude, GPT, Gemini, DeepSeek, Llama, Qwen, Mistral, and more
+- **Automatic model routing** — picks the best model for each task based on complexity and cost
+- **Budget governance** — session cost limits, pre-execution estimation, auto-downgrade to cheaper models
+
+### Smart Execution Modes
+- **Direct** — fast single-model answers for simple questions
+- **Deep Think** — extended reasoning with chain-of-thought for complex problems
+- **Consensus** — runs 2-3 models in parallel, compares answers, synthesizes the best response
+- **Autonomous** — multi-step agent loop with planning, tool use, and self-correction
+
+### Built-in Tools
+- **File system** — read, write, search, and manage files
+- **Git** — status, diff, log, commit — full git workflow from chat
+- **Terminal** — execute shell commands with permission controls
+- **Web search** — search the web and fetch page content
+- **MCP support** — connect any MCP-compatible server for extended capabilities
+
+### Research Pipeline
+- **5-stage YOYO pipeline** — Decompose > Search > Analyze > Synthesize > Verify
+- **Multi-source** — web search, academic papers, documentation
+- **Citation tracking** — every claim linked to its source
+- **Export** — Markdown, JSON, or plain text reports
+
+### Creative Generation
+- **Images** — FLUX, DALL-E, Stable Diffusion (text-to-image)
+- **Video** — Kling, Minimax (text-to-video, image-to-video)
+- **Speech** — ElevenLabs, OpenAI TTS (text-to-speech)
+- **Music** — Suno (text-to-music)
+
+### Workflow Engine
+- **YAML-defined pipelines** — chain LLM calls, tool executions, and shell commands
+- **Conditions and loops** — conditional branching and iteration
+- **Parallel execution** — run steps concurrently
+- **Variable passing** — capture outputs and feed into later steps
+
+### Memory & RAG
+- **Persistent memory** — remembers context across sessions
+- **Vector search** — sqlite-vec with 1024-dimensional embeddings
+- **Auto-compaction** — keeps memory lean and relevant
+
+### Security & Permissions
+- **4-tier permission system** — AUTO, SESSION, EVERY_TIME, NEVER
+- **Progressive trust** — permissions escalate based on usage patterns
+- **Audit logging** — every tool execution is logged
+- **Keychain storage** — API keys stored securely via OS keychain
+
+---
+
+## Installation
+
+### From PyPI (recommended)
 
 ```bash
 pip install elidia-cli
 ```
 
-## Quick Start
+### From GitHub Release
+
+Download the latest `.whl` file from [Releases](https://github.com/Elidia-Technology/elidia-cli/releases), then:
 
 ```bash
-# Authenticate
-elidia auth login
+pip install elidia_cli-0.1.0-py3-none-any.whl
+```
 
-# Interactive chat
+### Requirements
+
+- Python 3.11 or higher
+- An AiUtils Developer API key ([get one here](https://developer.aiutils.io))
+
+---
+
+## Quick Start
+
+### 1. Authenticate
+
+```bash
+elidia auth login
+```
+
+You'll be prompted for your AiUtils Developer API key (`ak-dev-...`).
+
+### 2. Start chatting
+
+```bash
+# Interactive REPL
 elidia chat
 
 # One-shot query
-elidia chat "Explain the difference between async and threading in Python"
+elidia chat "Explain async/await in Python"
 
 # Specify a model
-elidia chat --model claude-sonnet-5 "Review this code"
+elidia chat --model claude-sonnet-5 "Review this function for bugs"
 
 # Research mode
-elidia chat --mode research "Compare React vs Svelte for enterprise apps"
+elidia chat --mode research "Compare PostgreSQL vs MongoDB for time-series data"
 ```
+
+### 3. Check your balance
+
+```bash
+elidia auth status
+```
+
+---
 
 ## REPL Commands
 
+Once inside the interactive REPL (`elidia chat`), use slash commands:
+
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `/model [name]` | Switch model or show current |
 | `/mode [mode]` | Switch mode (chat, code, research, think, create) |
-| `/think [level]` | Set thinking level (minimal, low, medium, high, max) |
+| `/think [level]` | Set thinking depth (minimal, low, medium, high, max) |
 | `/budget` | Show session cost summary |
 | `/research <query>` | Run deep research pipeline |
-| `/create image\|video\|speech\|music <prompt>` | Generate creative content |
-| `/workflow <path.yaml>` | Execute a YAML workflow |
-| `/daemon status\|start\|stop` | Manage background tasks |
+| `/create image <prompt>` | Generate an image |
+| `/create video <prompt>` | Generate a video |
+| `/create speech <text>` | Generate speech audio |
+| `/create music <prompt>` | Generate music |
+| `/workflow <file.yaml>` | Execute a YAML workflow |
 | `/tools [category]` | List available tools |
 | `/mcp` | Show MCP server status |
 | `/persona [name]` | Switch agent persona |
@@ -61,13 +150,17 @@ elidia chat --mode research "Compare React vs Svelte for enterprise apps"
 | `/history [query]` | Search chat history |
 | `/balance` | Check DT balance |
 | `/cost` | Session cost breakdown |
+| `/theme [name]` | Switch UI theme |
+| `/cache [on\|off]` | Toggle response cache |
 | `/new` | Start new session |
 | `/clear` | Clear conversation |
 | `/help [command]` | Show help |
 
+---
+
 ## Configuration
 
-Configuration lives in `~/.elidia/config.toml`:
+Elidia stores configuration in `~/.elidia/config.toml`:
 
 ```toml
 [api]
@@ -75,73 +168,130 @@ base_url = "https://developer.aiutils.io/v1"
 timeout_seconds = 120
 
 [models]
+default = "deepseek-chat"
 code = "deepseek-chat"
 reasoning = "deepseek-reasoner"
 creative = "auto"
-cheap = "deepseek-chat"
 
 [permissions]
 default_level = "session"
+
+[budget]
+session_limit_dt = 50.0
+warn_threshold_dt = 40.0
 
 [theme]
 name = "default"
 ```
 
-## Local Models
+---
 
-Elidia supports local models via Ollama for offline/free usage:
+## Available Models
+
+Elidia supports 30+ models across multiple providers:
+
+| Provider | Models |
+|---|---|
+| **Anthropic** | Claude Sonnet 5, Claude Haiku 4.5 |
+| **OpenAI** | GPT-4o, GPT-4o-mini, o3, o4-mini |
+| **Google** | Gemini 2.5 Pro, Gemini 2.5 Flash |
+| **DeepSeek** | DeepSeek Chat, DeepSeek Reasoner |
+| **Meta** | Llama 3.3 70B, Llama 4 Scout, Llama 4 Maverick |
+| **Alibaba** | Qwen 2.5 72B, QwQ 32B |
+| **Mistral** | Mistral Large, Codestral |
+| **Image** | FLUX 1.1 Pro, FLUX Schnell, DALL-E 3, SD 3.5 |
+| **Video** | Kling v2, Minimax Video |
+| **Audio** | ElevenLabs v2, OpenAI TTS, Suno v4 |
+
+---
+
+## Workflow Example
+
+Create a `research.yaml` file:
+
+```yaml
+name: competitor-analysis
+description: Research competitors and generate a summary
+
+variables:
+  topic: "AI coding assistants"
+
+steps:
+  - name: research
+    type: llm
+    prompt: "List the top 5 {{topic}} with their key features"
+    output: findings
+    model: deepseek-chat
+
+  - name: analyze
+    type: llm
+    prompt: "Based on these findings, create a comparison table:\n{{findings}}"
+    output: analysis
+    model: claude-sonnet-5
+
+  - name: save
+    type: shell
+    command: "echo '{{analysis}}' > competitor-report.md"
+```
+
+Run it:
 
 ```bash
-# Install optional local dependencies
+elidia chat
+> /workflow research.yaml
+```
+
+---
+
+## MCP Integration
+
+Connect any MCP-compatible server for extended tool access:
+
+```toml
+# ~/.elidia/config.toml
+[mcp.servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"]
+
+[mcp.servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+env = { GITHUB_TOKEN = "ghp_..." }
+```
+
+---
+
+## Local Models (Experimental)
+
+For offline/free usage via Ollama:
+
+```bash
+# Install local model dependencies
 pip install elidia-cli[local]
 
 # Use a local model
 elidia chat --model ollama:llama3.2
 ```
 
-## Development
+---
 
-```bash
-# Clone
-git clone https://github.com/aiutils/elidia-cli
-cd elidia-cli
+## API Key
 
-# Install in dev mode
-pip install -e ".[dev]"
+Elidia uses the AiUtils Developer API. Get your API key at [developer.aiutils.io](https://developer.aiutils.io).
 
-# Run tests
-pytest
+Your key starts with `ak-dev-` and is stored securely in your OS keychain — never in plain text files.
 
-# Lint
-ruff check elidia/
-```
+---
 
-## Architecture
+## Support
 
-```
-elidia/
-├── agent/       # Agent loop, personas, portal bridge
-├── api/         # AiUtils API client (httpx, SSE)
-├── auth/        # Keychain-based authentication
-├── cache/       # LRU response cache
-├── cli/         # Click commands, REPL, renderer, themes, pager, progress
-├── config/      # Settings, defaults, project rules
-├── creative/    # Image, video, audio generation + terminal display
-├── daemon/      # Background file watchers, schedules, webhooks
-├── db/          # SQLite database
-├── mcp/         # MCP client, registry, types
-├── memory/      # Persistent memory (auto, compaction, embeddings)
-├── models/      # Model router, adaptive selection
-├── modes/       # Mode classifier, thinking levels, budget, consensus, deep think
-├── permissions/ # Permission manager, audit, trust engine
-├── rag/         # RAG engine, chunker, ingest, watcher
-├── research/    # YOYO research orchestrator, sources, export
-├── session/     # Session manager, history search
-├── tools/       # Built-in tools (filesystem, git, terminal, search, fetch)
-├── widgets/     # Widget protocol + CLI renderer
-└── workflow/    # YAML workflow engine
-```
+- **Issues:** [GitHub Issues](https://github.com/Elidia-Technology/elidia-cli/issues)
+- **Email:** support@aiutils.io
+
+---
 
 ## License
 
-Proprietary — Copyright © 2026 Elidia Technology Pvt Ltd. All Rights Reserved. See [LICENSE](LICENSE) for details.
+Proprietary software. Copyright 2026 Elidia Technology Pvt Ltd. All Rights Reserved.
+
+See [LICENSE](LICENSE) for full terms.

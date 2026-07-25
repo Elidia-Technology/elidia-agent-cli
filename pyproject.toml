@@ -7,7 +7,7 @@ name = "elidia-cli"
 version = "0.1.0"
 description = "Elidia — Universal AI Agent for your terminal"
 readme = "README.md"
-license = {text = "Proprietary"}
+license = "LicenseRef-Proprietary"
 requires-python = ">=3.11"
 authors = [{name = "Elidia Technology Pvt Ltd", email = "support@aiutils.io"}]
 keywords = ["ai", "agent", "cli", "llm", "mcp", "coding-assistant", "terminal"]
