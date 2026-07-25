@@ -45,6 +45,12 @@ local = [
     "diffusers>=0.27",
     "Pillow>=10.0",
 ]
+rag = [
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "python-pptx>=0.6",
+]
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",

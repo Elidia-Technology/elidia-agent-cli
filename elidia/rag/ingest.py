@@ -59,13 +59,8 @@ class FileIngestPipeline:
             logger.info(f"Skipping unsupported file type: {path}")
             return []
 
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except Exception as e:
-            logger.warning(f"Could not read {path}: {e}")
-            return []
-
-        if not text.strip():
+        text = await self._extract_text(path, content_type)
+        if not text or not text.strip():
             return []
 
         file_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
@@ -78,6 +73,28 @@ class FileIngestPipeline:
             file_hash=file_hash,
             chunk_size=chunk_size,
         )
+
+    async def _extract_text(self, path: Path, content_type: str) -> str:
+        """Extract text from a file, dispatching to the appropriate parser."""
+        logger.debug(f"Entered into _extract_text: path={path}, type={content_type}")
+        try:
+            if content_type == "pdf":
+                return _parse_pdf(path)
+            elif content_type == "docx":
+                return _parse_docx(path)
+            elif content_type == "xlsx":
+                return _parse_xlsx(path)
+            elif content_type == "pptx":
+                return _parse_pptx(path)
+            elif content_type == "html":
+                return _parse_html(path)
+            else:
+                return path.read_text(encoding="utf-8", errors="replace")
+        except UnicodeDecodeError:
+            return path.read_text(encoding="latin-1", errors="replace")
+        except Exception as e:
+            logger.warning(f"Could not extract text from {path}: {e}")
+            return ""
 
     async def ingest_directory(
         self,
@@ -147,8 +164,141 @@ class FileIngestPipeline:
         if suffix in TEXT_EXTENSIONS:
             return "text"
 
+        # Binary / rich document formats
+        if suffix == ".pdf":
+            return "pdf"
+        if suffix == ".docx":
+            return "docx"
+        if suffix == ".xlsx":
+            return "xlsx"
+        if suffix == ".pptx":
+            return "pptx"
+        if suffix in {".html", ".htm"}:
+            return "html"
+
         mime, _ = mimetypes.guess_type(str(path))
         if mime and mime.startswith("text/"):
             return "text"
 
         return None
+
+
+# --- Binary format parsers ---
+
+def _parse_pdf(path: Path) -> str:
+    """Extract text from PDF using pymupdf (fitz)."""
+    logger.debug(f"Entered into _parse_pdf: path={path}")
+    try:
+        import fitz
+        doc = fitz.open(str(path))
+        parts: list[str] = []
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                parts.append(text.strip())
+        doc.close()
+        return "\n\n".join(parts)
+    except ImportError:
+        logger.warning("pymupdf not installed — cannot parse PDF. pip install pymupdf")
+        return ""
+    except Exception as e:
+        logger.warning(f"PDF parse failed for {path}: {e}")
+        return ""
+
+
+def _parse_docx(path: Path) -> str:
+    """Extract text from DOCX using python-docx."""
+    logger.debug(f"Entered into _parse_docx: path={path}")
+    try:
+        from docx import Document
+        doc = Document(str(path))
+        parts: list[str] = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text.strip())
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = " | ".join(cell.text for cell in row.cells)
+                if row_text.strip():
+                    parts.append(row_text.strip())
+        return "\n\n".join(parts)
+    except ImportError:
+        logger.warning("python-docx not installed — cannot parse DOCX. pip install python-docx")
+        return ""
+    except Exception as e:
+        logger.warning(f"DOCX parse failed for {path}: {e}")
+        return ""
+
+
+def _parse_xlsx(path: Path) -> str:
+    """Extract text from XLSX using openpyxl."""
+    logger.debug(f"Entered into _parse_xlsx: path={path}")
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(str(path), read_only=True, data_only=True)
+        parts: list[str] = []
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            parts.append(f"[Sheet: {sheet_name}]")
+            for row in ws.iter_rows(values_only=True):
+                row_text = " | ".join(str(c) for c in row if c is not None)
+                if row_text.strip():
+                    parts.append(row_text.strip())
+        wb.close()
+        return "\n".join(parts)
+    except ImportError:
+        logger.warning("openpyxl not installed — cannot parse XLSX. pip install openpyxl")
+        return ""
+    except Exception as e:
+        logger.warning(f"XLSX parse failed for {path}: {e}")
+        return ""
+
+
+def _parse_pptx(path: Path) -> str:
+    """Extract text from PPTX using python-pptx."""
+    logger.debug(f"Entered into _parse_pptx: path={path}")
+    try:
+        from pptx import Presentation
+        prs = Presentation(str(path))
+        parts: list[str] = []
+        for slide_num, slide in enumerate(prs.slides, 1):
+            slide_parts = []
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        if para.text.strip():
+                            slide_parts.append(para.text.strip())
+            if slide_parts:
+                parts.append(f"[Slide {slide_num}]\n" + "\n".join(slide_parts))
+        return "\n\n".join(parts)
+    except ImportError:
+        logger.warning("python-pptx not installed — cannot parse PPTX. pip install python-pptx")
+        return ""
+    except Exception as e:
+        logger.warning(f"PPTX parse failed for {path}: {e}")
+        return ""
+
+
+def _parse_html(path: Path) -> str:
+    """Extract visible text from HTML using built-in html.parser."""
+    logger.debug(f"Entered into _parse_html: path={path}")
+    try:
+        from html.parser import HTMLParser
+
+        class TextExtractor(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self._parts: list[str] = []
+                self._skip_tags = {"script", "style", "noscript", "meta", "link"}
+
+            def handle_data(self, data: str) -> None:
+                text = data.strip()
+                if text:
+                    self._parts.append(text)
+
+        extractor = TextExtractor()
+        extractor.feed(path.read_text(encoding="utf-8", errors="replace"))
+        return "\n".join(extractor._parts)
+    except Exception as e:
+        logger.warning(f"HTML parse failed for {path}: {e}")
+        return ""
