@@ -34,6 +34,7 @@ from elidia.memory.auto import AutoMemory
 from elidia.memory.store import MemoryStore, MemoryTier
 from elidia.memory.outcomes import OutcomeTracker
 from elidia.memory.patterns import PatternLearner
+from elidia.memory.compaction import SessionCompactor
 from elidia.models.adaptive import AdaptiveRouter
 from elidia.models.router import ModelRouter
 from elidia.modes.budget import BudgetGovernor
@@ -172,6 +173,9 @@ class ElidiaRepl:
         self._outcome_tracker = OutcomeTracker(self._memory_store)
         self._pattern_learner = PatternLearner(self._outcome_tracker)
         self._adaptive_router = AdaptiveRouter(self._router, self._pattern_learner, self._outcome_tracker)
+
+        # Session compaction — summarizes session into persistent memory on /new
+        self._compactor = SessionCompactor(self._memory_store, self._client)
         self._history_search = HistorySearch(self._db)
 
         self._project_rules = load_project_rules()
@@ -405,6 +409,16 @@ class ElidiaRepl:
         return True
 
     def _cmd_new(self) -> bool:
+        # Compact current session before starting a new one
+        if self._compactor and len(self._messages) >= 4:
+            asyncio.ensure_future(
+                self._compactor.compact_session(
+                    messages=list(self._messages),
+                    session_id=self._session_id or "",
+                    project_path=str(Path.cwd()),
+                )
+            )
+
         self._messages.clear()
         if self._session_mgr:
             self._session_id = self._session_mgr.create_session(mode=self._mode)
