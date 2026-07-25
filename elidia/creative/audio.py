@@ -197,6 +197,79 @@ async def generate_music(
     )
 
 
+async def transcribe_audio(
+    client: AiUtilsClient,
+    file_path: str | Path,
+    model: str = "whisper-1",
+    language: str | None = None,
+) -> str:
+    """Transcribe audio to text via AiUtils API (Whisper).
+
+    Supports mp3, wav, m4a, ogg, webm, flac.
+    """
+    logger.debug(f"Entered into transcribe_audio: model={model}, file={file_path!r}")
+    start = time.monotonic()
+
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Audio file not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Not a file: {path}")
+
+    file_size = path.stat().st_size
+    if file_size > 25 * 1024 * 1024:
+        raise ValueError(f"Audio file too large: {file_size} bytes (max 25MB)")
+
+    import httpx
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "response_format": "text",
+    }
+    if language:
+        payload["language"] = language
+
+    file_bytes = path.read_bytes()
+    ext = path.suffix.lower().lstrip(".")
+    mime_map = {
+        "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
+        "ogg": "audio/ogg", "webm": "audio/webm", "flac": "audio/flac",
+        "mp4": "audio/mp4", "mpeg": "audio/mpeg",
+    }
+    content_type = mime_map.get(ext, "application/octet-stream")
+
+    async with httpx.AsyncClient(
+        base_url=client._base_url,
+        headers={"Authorization": f"Bearer {client._api_key}"},
+        timeout=httpx.Timeout(120.0, connect=10.0),
+    ) as http:
+        response = await http.post(
+            "/audio/transcriptions",
+            data=payload,
+            files={"file": (path.name, file_bytes, content_type)},
+        )
+
+        if response.status_code == 401:
+            raise RuntimeError("Invalid API key for audio transcription")
+        if response.status_code == 402:
+            raise RuntimeError("Insufficient balance for audio transcription")
+        if response.status_code == 413:
+            raise RuntimeError(f"Audio file too large (max 25MB)")
+        response.raise_for_status()
+
+        content_type_resp = response.headers.get("content-type", "")
+        if "application/json" in content_type_resp:
+            data = response.json()
+            text = data.get("text", "")
+        else:
+            text = response.text.strip()
+
+    elapsed = int((time.monotonic() - start) * 1000)
+    logger.info(f"Audio transcribed in {elapsed}ms: {len(text)} chars")
+
+    return text
+
+
 def list_tts_voices(model: str = DEFAULT_TTS_MODEL) -> list[str]:
     logger.debug(f"Entered into list_tts_voices: model={model}")
     info = TTS_MODELS.get(model, {})
