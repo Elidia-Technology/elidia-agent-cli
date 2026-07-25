@@ -235,3 +235,88 @@ def _inline_markdown(text: str) -> str:
         result,
     )
     return result
+
+
+async def export_pdf(
+    report: str,
+    title: str = "Research Report",
+    sources: list[Any] | None = None,
+    output_path: str | Path | None = None,
+) -> ExportResult:
+    """Export a research report as a self-contained PDF using Playwright.
+
+    Requires: pip install playwright && playwright install chromium
+    """
+    logger.debug(f"Entered into export_pdf: title={title!r}, len={len(report)}")
+
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise RuntimeError(
+            "Playwright not installed. Run: pip install playwright && playwright install chromium"
+        )
+
+    html = _build_html_document(report, title, sources or [])
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.set_content(html, wait_until="networkidle")
+        pdf_bytes = await page.pdf(format="A4", print_background=True, margin={
+            "top": "20mm", "bottom": "20mm", "left": "15mm", "right": "15mm",
+        })
+        await browser.close()
+
+    if output_path:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(pdf_bytes)
+        return ExportResult(content=f"PDF saved to {path}", file_path=str(path))
+
+    return ExportResult(content="PDF generated", metadata={"bytes": len(pdf_bytes)})
+
+
+def _build_html_document(report: str, title: str, sources: list[Any]) -> str:
+    """Build a self-contained HTML document for PDF rendering."""
+    import html as html_mod
+
+    report_html = _md_to_html(report)
+
+    sources_html = ""
+    if sources:
+        source_items = []
+        for i, s in enumerate(sources, 1):
+            title_s = getattr(s, "title", "") or getattr(s, "name", "") or str(s)
+            url = getattr(s, "url", "") or getattr(s, "link", "") or ""
+            source_items.append(
+                f'<li><a href="{html_mod.escape(url)}">{html_mod.escape(title_s)}</a></li>'
+                if url else f"<li>{html_mod.escape(title_s)}</li>"
+            )
+        sources_html = f"<h2>Sources</h2><ol>{''.join(source_items)}</ol>"
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{html_mod.escape(title)}</title>
+<style>
+  body {{ font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+         max-width: 800px; margin: 0 auto; padding: 40px 20px;
+         color: #1a1a1a; line-height: 1.6; font-size: 12pt; }}
+  h1 {{ border-bottom: 2px solid #2563eb; padding-bottom: 8px; }}
+  h2 {{ color: #2563eb; margin-top: 24px; }}
+  code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 10pt; }}
+  pre {{ background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 6px;
+         overflow-x: auto; font-size: 10pt; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+  th, td {{ border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }}
+  th {{ background: #f1f5f9; }}
+  a {{ color: #2563eb; }}
+</style>
+</head>
+<body>
+<h1>{html_mod.escape(title)}</h1>
+{report_html}
+{sources_html}
+</body>
+</html>"""
