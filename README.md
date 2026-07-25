@@ -5,8 +5,8 @@
     Write code, search the web, manage files, run research, generate creative content — all from the command line.
   </p>
   <p align="center">
-    <a href="https://pypi.org/project/elidia-cli/"><img src="https://img.shields.io/pypi/v/elidia-cli?color=blue" alt="PyPI"></a>
-    <a href="https://pypi.org/project/elidia-cli/"><img src="https://img.shields.io/pypi/pyversions/elidia-cli" alt="Python"></a>
+    <a href="https://pypi.org/project/elidia-agent-cli/"><img src="https://img.shields.io/pypi/v/elidia-agent-cli?color=blue" alt="PyPI"></a>
+    <a href="https://pypi.org/project/elidia-agent-cli/"><img src="https://img.shields.io/pypi/pyversions/elidia-agent-cli" alt="Python"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Proprietary-red" alt="License"></a>
   </p>
 </p>
@@ -75,15 +75,15 @@ Powered by the [AiUtils Developer API](https://developer.aiutils.io), Elidia Age
 ### From PyPI (recommended)
 
 ```bash
-pip install elidia-cli
+pip install elidia-agent-cli
 ```
 
 ### From GitHub Release
 
-Download the latest `.whl` file from [Releases](https://github.com/Elidia-Technology/elidia-cli/releases), then:
+Download the latest `.whl` file from [Releases](https://github.com/Elidia-Technology/elidia-agent-cli/releases), then:
 
 ```bash
-pip install elidia_cli-0.1.0-py3-none-any.whl
+pip install elidia_agent_cli-0.1.0-py3-none-any.whl
 ```
 
 ### Requirements
@@ -267,7 +267,7 @@ For offline/free usage via Ollama:
 
 ```bash
 # Install local model dependencies
-pip install elidia-cli[local]
+pip install elidia-agent-cli[local]
 
 # Use a local model
 elidia chat --model ollama:llama3.2
@@ -285,7 +285,7 @@ Your key starts with `ak-dev-` and is stored securely in your OS keychain — ne
 
 ## Support
 
-- **Issues:** [GitHub Issues](https://github.com/Elidia-Technology/elidia-cli/issues)
+- **Issues:** [GitHub Issues](https://github.com/Elidia-Technology/elidia-agent-cli/issues)
 - **Email:** support@aiutils.io
 
 ---
