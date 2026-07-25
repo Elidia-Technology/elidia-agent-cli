@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "elidia-cli"
+name = "elidia-agent-cli"
 version = "0.1.0"
 description = "Elidia Agent CLI — Universal AI Agent for your terminal"
 readme = "README.md"
@@ -15,7 +15,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -57,10 +56,10 @@ elidia = "elidia.cli.main:cli"
 
 [project.urls]
 Homepage = "https://elidia.dev"
-Repository = "https://github.com/aiutils/elidia-cli"
+Repository = "https://github.com/aiutils/elidia-agent-cli"
 Documentation = "https://docs.elidia.dev"
-Issues = "https://github.com/aiutils/elidia-cli/issues"
-Changelog = "https://github.com/aiutils/elidia-cli/blob/main/CHANGELOG.md"
+Issues = "https://github.com/aiutils/elidia-agent-cli/issues"
+Changelog = "https://github.com/aiutils/elidia-agent-cli/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
