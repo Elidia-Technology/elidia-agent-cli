@@ -161,3 +161,102 @@ def list_local_models() -> list[dict[str, Any]]:
         }
         for name, info in LOCAL_IMAGE_MODELS.items()
     ]
+
+
+def remove_background(
+    image_path: str | Path,
+    output_path: str | Path | None = None,
+) -> str:
+    """Remove background from an image using rembg.
+
+    Requires: pip install elidia-agent-cli[local] (includes rembg)
+    Falls back gracefully with clear error when not installed.
+    """
+    logger.debug(f"Entered into remove_background: path={image_path!r}")
+    from pathlib import Path as _Path
+
+    img_path = _Path(image_path)
+    if not img_path.exists():
+        raise FileNotFoundError(f"Image not found: {img_path}")
+
+    try:
+        from rembg import remove
+        from PIL import Image
+    except ImportError:
+        raise RuntimeError(
+            "rembg not installed. Run: pip install rembg"
+        )
+
+    input_img = Image.open(str(img_path))
+    output_img = remove(input_img)
+
+    out = _Path(output_path) if output_path else img_path.parent / f"{img_path.stem}_nobg.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    output_img.save(str(out), format="PNG")
+
+    logger.info(f"Background removed: {out}")
+    return str(out)
+
+
+def swap_face(
+    source_path: str | Path,
+    target_path: str | Path,
+    output_path: str | Path | None = None,
+) -> str:
+    """Swap face from source image onto target image using InsightFace.
+
+    Requires: pip install insightface onnxruntime opencv-python
+    Model auto-downloads on first use (~500MB).
+    """
+    logger.debug(f"Entered into swap_face: source={source_path!r}, target={target_path!r}")
+    from pathlib import Path as _Path
+
+    src = _Path(source_path)
+    tgt = _Path(target_path)
+    if not src.exists():
+        raise FileNotFoundError(f"Source image not found: {src}")
+    if not tgt.exists():
+        raise FileNotFoundError(f"Target image not found: {tgt}")
+
+    try:
+        import cv2
+        import insightface
+        import numpy as np
+    except ImportError:
+        raise RuntimeError(
+            "insightface not installed. Run: pip install insightface onnxruntime opencv-python"
+        )
+
+    swapper = insightface.model_zoo.get_model(
+        "inswapper_128.onnx",
+        download=True,
+        download_zip=True,
+    )
+
+    src_img = cv2.imread(str(src))
+    tgt_img = cv2.imread(str(tgt))
+
+    if src_img is None:
+        raise ValueError(f"Could not read source image: {src}")
+    if tgt_img is None:
+        raise ValueError(f"Could not read target image: {tgt}")
+
+    app = insightface.app.FaceAnalysis(name="buffalo_l")
+    app.prepare(ctx_id=0, det_size=(640, 640))
+
+    src_faces = app.get(src_img)
+    tgt_faces = app.get(tgt_img)
+
+    if not src_faces:
+        raise ValueError("No face found in source image")
+    if not tgt_faces:
+        raise ValueError("No face found in target image")
+
+    result = swapper.get(tgt_img, tgt_faces[0], src_faces[0], paste_back=True)
+
+    out = _Path(output_path) if output_path else tgt.parent / f"{tgt.stem}_swapped.jpg"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out), result)
+
+    logger.info(f"Face swapped: {out}")
+    return str(out)
