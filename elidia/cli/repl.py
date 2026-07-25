@@ -49,6 +49,7 @@ from elidia.session.history import HistorySearch
 from elidia.session.manager import SessionManager
 from elidia.tools import ToolRegistry, create_default_registry
 from elidia.widgets.renderer import CliWidgetRenderer
+from elidia.cli.renderer import ResponseRenderer, render_success, render_error
 from elidia.workflow.engine import WorkflowExecutor, parse_workflow
 
 logger = logging.getLogger(__name__)
@@ -193,7 +194,6 @@ class ElidiaRepl:
             session_limit_dt=self._config.budget.session_limit_dt if hasattr(self._config, "budget") else 50000.0,
         )
         self._daemon = DaemonManager()
-        self._widget_renderer = CliWidgetRenderer(console=self._console)
         self._research_sources = ResearchSources(mcp_registry=self._mcp_registry)
 
         self._theme_manager = ThemeManager()
@@ -202,6 +202,7 @@ class ElidiaRepl:
             self._theme_manager.set_theme(theme_name)
         self._console = self._theme_manager.create_console()
         self._widget_renderer = CliWidgetRenderer(console=self._console)
+        self._response_renderer = ResponseRenderer(console=self._console)
 
         self._pager = AutoPager(console=self._console)
         self._cache = ResponseCache(max_size=256, default_ttl=600)
@@ -1033,7 +1034,7 @@ class ElidiaRepl:
                     if self._pager and self._pager.should_page(full_response):
                         self._pager.print_or_page(full_response, as_markdown=True)
                     else:
-                        self._console.print(Markdown(full_response))
+                        self._response_renderer.render_response(full_response)
                 except Exception:
                     self._console.print(full_response)
             return
@@ -1096,7 +1097,7 @@ class ElidiaRepl:
                             if self._pager and self._pager.should_page(full_response):
                                 self._pager.print_or_page(full_response, as_markdown=True)
                             else:
-                                self._console.print(Markdown(full_response))
+                                self._response_renderer.render_response(full_response)
                         except Exception:
                             self._console.print(full_response)
                     else:
@@ -1244,7 +1245,7 @@ class ElidiaRepl:
                             return
 
                 if full_response:
-                    self._console.print(Markdown(full_response))
+                    self._response_renderer.render_response(full_response)
             else:
                 async for event in self._client.chat_completion_stream(
                     messages=self._messages,
