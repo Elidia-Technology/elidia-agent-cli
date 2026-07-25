@@ -50,20 +50,24 @@ class _ElidiaGroup(click.Group):
 @click.option("--mode", default="chat", type=click.Choice(["chat", "code", "research", "think", "create"]))
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 @click.option("--version", "-v", is_flag=True, help="Show version")
+@click.option("--file", "-f", "files", multiple=True, type=click.Path(exists=True),
+              help="Include file content in context (repeatable)")
 @click.pass_context
-def cli(ctx: click.Context, model: str | None, mode: str, debug: bool, version: bool) -> None:
-    """Elidia — Universal AI Agent for your terminal."""
+def cli(ctx: click.Context, model: str | None, mode: str, debug: bool, version: bool,
+        files: tuple[str, ...]) -> None:
+    """Elidia Agent CLI — Universal AI Agent for your terminal."""
     _setup_logging(debug)
     logger.debug("Entered into cli")
 
     if version:
-        console.print(f"elidia-cli v{VERSION}")
+        console.print(f"elidia-agent-cli v{VERSION}")
         ctx.exit()
 
     ctx.ensure_object(dict)
     ctx.obj["model"] = model
     ctx.obj["mode"] = mode
     ctx.obj["debug"] = debug
+    ctx.obj["files"] = files
 
     if ctx.invoked_subcommand is not None:
         return
@@ -71,7 +75,7 @@ def cli(ctx: click.Context, model: str | None, mode: str, debug: bool, version: 
     if not sys.stdin.isatty():
         stdin_content = sys.stdin.read().strip()
         if stdin_content:
-            asyncio.run(_one_shot(stdin_content, model=model, mode=mode))
+            asyncio.run(_one_shot(stdin_content, model=model, mode=mode, files=files))
             return
 
     asyncio.run(_start_repl(model=model, mode=mode))
@@ -88,7 +92,8 @@ def _default_message(ctx: click.Context, message: tuple[str, ...]) -> None:
         return
     model = ctx.obj.get("model") if ctx.obj else None
     mode = ctx.obj.get("mode", "chat") if ctx.obj else "chat"
-    asyncio.run(_one_shot(user_msg, model=model, mode=mode))
+    files = ctx.obj.get("files", ()) if ctx.obj else ()
+    asyncio.run(_one_shot(user_msg, model=model, mode=mode, files=files))
 
 
 cli.add_command(_default_message)
@@ -110,13 +115,43 @@ def ask(ctx: click.Context, message: tuple[str, ...], model: str | None, mode: s
     asyncio.run(_one_shot(user_msg, model=model, mode=mode))
 
 
-async def _one_shot(message: str, model: str | None = None, mode: str = "chat") -> None:
-    logger.debug(f"Entered into _one_shot: msg_len={len(message)}")
+def _build_file_context(files: tuple[str, ...]) -> str:
+    """Read file contents and build a context prefix for the message."""
+    if not files:
+        return ""
+    parts: list[str] = []
+    max_total = 100_000
+    total = 0
+    for path_str in files:
+        path = __import__("pathlib").Path(path_str)
+        try:
+            size = path.stat().st_size
+            if size > 1_000_000:
+                parts.append(f"[File too large to include: {path.name} ({size} bytes)]")
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if total + len(content) > max_total:
+                content = content[:max_total - total] + "\n... (truncated)"
+            parts.append(f"--- {path.name} ---\n{content}\n--- end {path.name} ---")
+            total += len(content)
+        except Exception as e:
+            parts.append(f"[Could not read {path.name}: {e}]")
+    if parts:
+        parts.append("---\n")
+    return "\n".join(parts)
+
+
+async def _one_shot(message: str, model: str | None = None, mode: str = "chat",
+                    files: tuple[str, ...] = ()) -> None:
+    logger.debug(f"Entered into _one_shot: msg_len={len(message)}, files={len(files)}")
     from elidia.cli.repl import ElidiaRepl
+
+    file_ctx = _build_file_context(files)
+    full_message = f"{file_ctx}{message}" if file_ctx else message
 
     repl = ElidiaRepl(forced_model=model, mode=mode)
     await repl.initialize()
-    await repl.send_message(message, interactive=False)
+    await repl.send_message(full_message, interactive=False)
     await repl.cleanup()
 
 
