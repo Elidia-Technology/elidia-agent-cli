@@ -150,6 +150,23 @@ class ElidiaRepl:
         except Exception as e:
             logger.warning(f"Portal tool discovery failed (non-fatal): {e}")
 
+        # Semantic tool router — embeds tool descriptions for intelligent routing
+        from elidia.tools.tool_router import SemanticToolRouter
+        from elidia.memory.embeddings import EmbeddingClient
+        api_key = get_api_key()
+        if api_key:
+            tool_embedder = EmbeddingClient(api_key=api_key)
+            self._tool_router = SemanticToolRouter(embedding_client=tool_embedder)
+            try:
+                tool_entries = [
+                    {"name": t.name, "description": t.description,
+                     "category": getattr(t, "category", ""), "parameters": t.parameters}
+                    for t in self._tool_registry.list_tools()
+                ]
+                await self._tool_router.index_tools(tool_entries)
+            except Exception as e:
+                logger.warning(f"Tool indexing failed (non-fatal): {e}")
+
         self._audit = AuditLogger()
         self._audit.open()
 
