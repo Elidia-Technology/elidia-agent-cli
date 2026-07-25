@@ -1052,6 +1052,8 @@ class ElidiaRepl:
         total_tokens_out = 0
         total_cost = 0.0
 
+        tool_count = 0
+
         try:
             async for event in self._agent_loop.run(
                 messages=self._messages,
@@ -1096,6 +1098,7 @@ class ElidiaRepl:
                     name = event.data.get("name", "?")
                     args = event.data.get("arguments", {})
                     args_preview = str(args)[:100]
+                    tool_count += 1
                     if interactive:
                         self._console.print(f"  [cyan]> {name}[/cyan]({args_preview})")
 
