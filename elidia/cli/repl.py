@@ -713,11 +713,22 @@ class ElidiaRepl:
 
         orchestrator = ResearchOrchestrator(client=self._client, search_fn=search_fn)
 
+        from elidia.cli.progress import StageTracker
+        research_stages = ["Decompose", "Search", "Analyze", "Synthesize", "Verify"]
+        tracker = StageTracker(console=self._console, stages=research_stages)
+        stage_map = {
+            "decompose": 0, "search": 1, "analyze": 2,
+            "synthesize": 3, "verify": 4,
+        }
+
+        tracker.start()
         try:
             async for event in orchestrator.run(query):
-                if event.kind == "stage":
-                    self._console.print(f"  [dim]{event.data}[/dim]")
+                idx = stage_map.get(event.kind, -1)
+                if idx >= 0:
+                    tracker.advance(stage_index=idx)
                 elif event.kind == "result":
+                    tracker.complete()
                     report = event.data.get("report", "")
                     sources = event.data.get("sources", [])
 
