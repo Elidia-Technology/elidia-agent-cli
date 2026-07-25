@@ -7,6 +7,9 @@ custom themes in ~/.elidia/themes.toml.
 from __future__ import annotations
 
 import logging
+import os
+import platform
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +18,35 @@ from rich.style import Style
 from rich.theme import Theme
 
 logger = logging.getLogger(__name__)
+
+_NO_COLOR = os.environ.get("NO_COLOR", "").strip() != ""
+
+
+def _detect_system_dark_mode() -> bool:
+    """Detect whether the OS is in dark mode. Returns False if undetectable."""
+    logger.debug("Entered into _detect_system_dark_mode")
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            result = subprocess.run(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                capture_output=True, text=True, timeout=2,
+            )
+            return result.stdout.strip().lower() == "dark"
+        elif system == "Linux":
+            gtk_theme = os.environ.get("GTK_THEME", "").lower()
+            return "dark" in gtk_theme
+        elif system == "Windows":
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            )
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return value == 0
+    except Exception:
+        pass
+    return False
 
 
 @dataclass(frozen=True)
@@ -107,9 +139,18 @@ class ThemeManager:
 
     def __init__(self, theme_name: str = "default") -> None:
         logger.debug(f"Entered into ThemeManager.__init__: theme={theme_name}")
-        self._current_name = theme_name
-        self._current = BUILTIN_THEMES.get(theme_name, BUILTIN_THEMES["default"])
+        self._no_color = _NO_COLOR
+        resolved = self._resolve_theme_name(theme_name)
+        self._current_name = resolved
+        self._current = BUILTIN_THEMES.get(resolved, BUILTIN_THEMES["default"])
         self._custom_themes: dict[str, ElidiaTheme] = {}
+
+    @staticmethod
+    def _resolve_theme_name(name: str) -> str:
+        """Resolve 'auto' to 'dark' or 'light' based on OS detection."""
+        if name == "auto":
+            return "dark" if _detect_system_dark_mode() else "light"
+        return name
 
     @property
     def current(self) -> ElidiaTheme:
@@ -211,4 +252,6 @@ class ThemeManager:
 
     def create_console(self) -> Console:
         logger.debug("Entered into create_console")
+        if self._no_color:
+            return Console(no_color=True)
         return Console(theme=self.to_rich_theme())
