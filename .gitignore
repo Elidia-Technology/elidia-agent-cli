@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+.env.*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.pem
+*.key
+
+# Internal agent instructions — never publish
+CLAUDE.md
+.claude/
+.clinerules/
