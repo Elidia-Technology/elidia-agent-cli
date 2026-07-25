@@ -979,6 +979,33 @@ class ElidiaRepl:
         if self._session_mgr and self._session_id:
             self._session_mgr.add_message(self._session_id, "user", user_input)
 
+        # Check response cache before dispatching to agent/LLM
+        cache_hit = None
+        if self._cache and self._cache.enabled:
+            cache_model = self._forced_model or "auto"
+            cache_key = self._cache.make_key(
+                model=cache_model,
+                messages=[{"role": "user", "content": user_input}],
+            )
+            cache_hit = self._cache.get(cache_key)
+            if cache_hit and interactive:
+                self._console.print("[dim](cached response)[/dim]")
+
+        if cache_hit:
+            full_response = cache_hit if isinstance(cache_hit, str) else str(cache_hit)
+            self._messages.append(ChatMessage(role="assistant", content=full_response))
+            if self._session_mgr and self._session_id:
+                self._session_mgr.add_message(self._session_id, "assistant", full_response)
+            if interactive:
+                try:
+                    if self._pager and self._pager.should_page(full_response):
+                        self._pager.print_or_page(full_response, as_markdown=True)
+                    else:
+                        self._console.print(Markdown(full_response))
+                except Exception:
+                    self._console.print(full_response)
+            return
+
         if self._auto_memory:
             saved = self._auto_memory.analyze_user_message(
                 user_input,
@@ -1117,6 +1144,15 @@ class ElidiaRepl:
                     cost_dt=total_cost,
                     session_id=self._session_id or "",
                 )
+
+            # Store in response cache for future identical queries
+            if self._cache and self._cache.enabled and full_response:
+                cache_model = self._forced_model or "auto"
+                cache_key = self._cache.make_key(
+                    model=cache_model,
+                    messages=[{"role": "user", "content": user_input}],
+                )
+                self._cache.put(cache_key, full_response)
 
             if interactive:
                 if not full_response.endswith("\n"):
