@@ -140,6 +140,15 @@ class ElidiaRepl:
 
         self._tool_registry = create_default_registry()
 
+        # Portal tool bridge — registers 111 enterprise tools from AiUtils portal
+        from elidia.agent.portal import PortalToolBridge
+        self._portal_bridge = PortalToolBridge(self._client)
+        try:
+            await self._portal_bridge.discover_tools()
+            self._portal_bridge.register_portal_tools(self._tool_registry)
+        except Exception as e:
+            logger.warning(f"Portal tool discovery failed (non-fatal): {e}")
+
         self._audit = AuditLogger()
         self._audit.open()
 

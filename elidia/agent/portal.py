@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 
+from elidia.api.client import AiUtilsClient
 from elidia.tools.base import ToolDefinition, ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -12,44 +13,35 @@ logger = logging.getLogger(__name__)
 class PortalToolBridge:
     """Executes AiUtils portal tools (111 tools) via the Developer API."""
 
-    def __init__(self, api_key: str, base_url: str = "https://developer.aiutils.io/v1") -> None:
-        logger.debug(f"Entered into PortalToolBridge.__init__: base_url={base_url}")
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+    def __init__(self, client: AiUtilsClient) -> None:
+        logger.debug("Entered into PortalToolBridge.__init__")
+        self._client = client
         self._tools: list[dict[str, Any]] = []
 
     async def discover_tools(self) -> list[dict[str, Any]]:
         logger.debug("Entered into discover_tools")
-        async with httpx.AsyncClient(
-            timeout=30,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-        ) as client:
-            try:
-                resp = await client.get(f"{self._base_url}/tools")
-                resp.raise_for_status()
-                data = resp.json()
-                self._tools = data.get("tools", data.get("data", []))
-                logger.info(f"Discovered {len(self._tools)} portal tools")
-                return self._tools
-            except Exception as e:
-                logger.warning(f"Failed to discover portal tools: {e}")
-                return []
+        try:
+            response = await self._client._get("/tools")
+            data = response if isinstance(response, dict) else {}
+            self._tools = data.get("tools", data.get("data", []))
+            logger.info(f"Discovered {len(self._tools)} portal tools")
+            return self._tools
+        except Exception as e:
+            logger.warning(f"Failed to discover portal tools: {e}")
+            return []
 
     async def execute_tool(self, tool_slug: str, inputs: dict[str, Any]) -> ToolResult:
         logger.debug(f"Entered into execute_tool: tool_slug={tool_slug}")
-        async with httpx.AsyncClient(
-            timeout=120,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-        ) as client:
-            try:
-                resp = await client.post(
-                    f"{self._base_url}/tools/{tool_slug}/execute",
+        try:
+            async with httpx.AsyncClient(
+                timeout=120,
+                headers={
+                    "Authorization": f"Bearer {self._client._api_key}",
+                    "Content-Type": "application/json",
+                },
+            ) as http:
+                resp = await http.post(
+                    f"{self._client._base_url}/tools/{tool_slug}/execute",
                     json={"inputs": inputs},
                 )
                 if resp.status_code == 402:
@@ -72,10 +64,10 @@ class PortalToolBridge:
                     content=content,
                     metadata={"tool_slug": tool_slug, "credits_used": data.get("credits_used", 0)},
                 )
-            except httpx.HTTPStatusError as e:
-                return ToolResult(content=f"Portal API error {e.response.status_code}: {e}", is_error=True)
-            except Exception as e:
-                return ToolResult(content=f"Portal tool error: {e}", is_error=True)
+        except httpx.HTTPStatusError as e:
+            return ToolResult(content=f"Portal API error {e.response.status_code}: {e}", is_error=True)
+        except Exception as e:
+            return ToolResult(content=f"Portal tool error: {e}", is_error=True)
 
     def register_portal_tools(self, registry: ToolRegistry) -> None:
         logger.debug("Entered into register_portal_tools")
