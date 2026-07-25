@@ -55,6 +55,10 @@ class AgentLoop:
         budget: BudgetGovernor | None = None,
         max_loops: int = MAX_TOOL_LOOPS,
         thinking_level: ThinkingLevel | None = None,
+        memory_store: Any = None,
+        rag_engine: Any = None,
+        persona_engine: Any = None,
+        project_path: str = "",
     ) -> None:
         logger.debug("Entered into AgentLoop.__init__")
         self._client = client
@@ -66,6 +70,10 @@ class AgentLoop:
         self._budget = budget or BudgetGovernor()
         self._max_loops = max_loops
         self._thinking_level = thinking_level or ThinkingLevel.MEDIUM
+        self._memory_store = memory_store
+        self._rag_engine = rag_engine
+        self._persona_engine = persona_engine
+        self._project_path = project_path
 
     async def run(
         self,
@@ -116,7 +124,7 @@ class AgentLoop:
             state.loop_count += 1
             logger.debug(f"Agent loop iteration {state.loop_count}, model={state.model}")
 
-            api_messages = self._build_api_messages(state)
+            api_messages = self._build_api_messages(state, user_message=user_text)
 
             request_payload: dict[str, Any] = {
                 "model": state.model,
@@ -246,15 +254,15 @@ class AgentLoop:
             schemas.extend(self._mcp.get_tool_schemas_for_llm())
         return schemas
 
-    def _build_api_messages(self, state: AgentState) -> list[dict[str, str]]:
+    def _build_api_messages(self, state: AgentState, user_message: str = "") -> list[dict[str, str]]:
         logger.debug("Entered into _build_api_messages")
-        system_prompt = self._get_system_prompt(state.mode)
+        system_prompt = self._get_system_prompt(state.mode, user_message)
         result: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         for msg in state.messages:
             result.append({"role": msg.role, "content": msg.content})
         return result
 
-    def _get_system_prompt(self, mode: str) -> str:
+    def _get_system_prompt(self, mode: str, user_message: str = "") -> str:
         logger.debug(f"Entered into _get_system_prompt: mode={mode}")
 
         tool_names = [t.name for t in self._tools.list_tools()]
@@ -275,6 +283,58 @@ class AgentLoop:
             "After tool results are returned, continue reasoning and call more tools or give your final answer.\n"
             "When you have enough information, give your final response directly without tool blocks.\n"
         )
+
+        # Context Fabric: assemble memory + RAG + persona + project rules
+        context_parts: list[str] = []
+
+        # 1. Persona overlay (if active)
+        if self._persona_engine:
+            persona_overlay = self._persona_engine.get_system_prompt_overlay()
+            if persona_overlay:
+                context_parts.append(f"[Persona]\n{persona_overlay}")
+
+        # 2. Memory recall — semantic search against user's persistent memory
+        if self._memory_store and user_message:
+            try:
+                recalled = self._memory_store.search_text(
+                    query=user_message, tier=None, limit=5,
+                )
+                if recalled:
+                    memories = "\n".join(
+                        f"- {m.key}: {m.content[:300]}" for m in recalled
+                    )
+                    context_parts.append(f"[Relevant Memories]\n{memories}")
+            except Exception as e:
+                logger.debug(f"Memory recall skipped: {e}")
+
+        # 3. RAG — search local documents for relevant context
+        if self._rag_engine and user_message:
+            try:
+                rag_results = self._rag_engine.search(
+                    query=user_message, limit=3,
+                    project_path=self._project_path,
+                )
+                if rag_results:
+                    docs = "\n---\n".join(
+                        f"[{r.document.source}]\n{r.document.content[:500]}"
+                        for r in rag_results[:3]
+                    )
+                    context_parts.append(f"[Relevant Documents]\n{docs}")
+            except Exception as e:
+                logger.debug(f"RAG search skipped: {e}")
+
+        # 4. Project rules
+        if self._project_path:
+            try:
+                from elidia.config.rules import load_project_rules, format_rules_for_system_prompt
+                rules = load_project_rules(self._project_path)
+                if rules:
+                    context_parts.append(format_rules_for_system_prompt(rules))
+            except Exception:
+                pass
+
+        if context_parts:
+            base += "\n\n--- Context ---\n" + "\n\n".join(context_parts) + "\n---\n"
 
         mode_prompts = {
             "code": "Focus on writing clean, correct, production-quality code. Prefer editing existing files over creating new ones.",

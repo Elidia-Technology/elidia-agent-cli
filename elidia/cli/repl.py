@@ -216,6 +216,9 @@ class ElidiaRepl:
             audit=self._audit,
             budget=self._budget,
             thinking_level=self._thinking_level,
+            memory_store=self._memory_store,
+            persona_engine=self._persona_engine,
+            project_path=str(Path.cwd()),
         )
 
     async def cleanup(self) -> None:
