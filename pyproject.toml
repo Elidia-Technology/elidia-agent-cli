@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "elidia-cli"
 version = "0.1.0"
-description = "Elidia — Universal AI Agent for your terminal"
+description = "Elidia Agent CLI — Universal AI Agent for your terminal"
 readme = "README.md"
 license = "LicenseRef-Proprietary"
 requires-python = ">=3.11"

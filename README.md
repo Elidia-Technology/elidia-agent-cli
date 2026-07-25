@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">Elidia CLI</h1>
+  <h1 align="center">Elidia Agent CLI</h1>
   <p align="center"><strong>Universal AI Agent for your terminal</strong></p>
   <p align="center">
     Write code, search the web, manage files, run research, generate creative content — all from the command line.
@@ -13,11 +13,11 @@
 
 ---
 
-## What is Elidia?
+## What is Elidia Agent CLI?
 
-Elidia is a powerful terminal-based AI agent that connects you to **30+ language models** through a single interface. It goes beyond simple chat — Elidia can execute tools, run multi-model consensus, conduct deep research, generate images/video/audio, and orchestrate complex workflows — all from your terminal.
+Elidia Agent CLI is a powerful terminal-based AI agent that connects you to **30+ language models** through a single interface. It goes beyond simple chat — it can execute tools, run multi-model consensus, conduct deep research, generate images/video/audio, and orchestrate complex workflows — all from your terminal.
 
-Powered by the [AiUtils Developer API](https://developer.aiutils.io), Elidia gives you access to models from OpenAI, Anthropic, Google, DeepSeek, Meta, Alibaba, and more — with a single API key.
+Powered by the [AiUtils Developer API](https://developer.aiutils.io), Elidia Agent CLI gives you access to models from OpenAI, Anthropic, Google, DeepSeek, Meta, Alibaba, and more — with a single API key.
 
 ## Key Features
 
@@ -160,7 +160,7 @@ Once inside the interactive REPL (`elidia chat`), use slash commands:
 
 ## Configuration
 
-Elidia stores configuration in `~/.elidia/config.toml`:
+Elidia Agent CLI stores configuration in `~/.elidia/config.toml`:
 
 ```toml
 [api]
@@ -188,7 +188,7 @@ name = "default"
 
 ## Available Models
 
-Elidia supports 30+ models across multiple providers:
+Elidia Agent CLI supports 30+ models across multiple providers:
 
 | Provider | Models |
 |---|---|
@@ -277,7 +277,7 @@ elidia chat --model ollama:llama3.2
 
 ## API Key
 
-Elidia uses the AiUtils Developer API. Get your API key at [developer.aiutils.io](https://developer.aiutils.io).
+Elidia Agent CLI uses the AiUtils Developer API. Get your API key at [developer.aiutils.io](https://developer.aiutils.io).
 
 Your key starts with `ak-dev-` and is stored securely in your OS keychain — never in plain text files.
 
