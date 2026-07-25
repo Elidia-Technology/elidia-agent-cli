@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -123,7 +124,7 @@ def _build_file_context(files: tuple[str, ...]) -> str:
     max_total = 100_000
     total = 0
     for path_str in files:
-        path = __import__("pathlib").Path(path_str)
+        path = Path(path_str)
         try:
             size = path.stat().st_size
             if size > 1_000_000:

@@ -8,6 +8,7 @@ Manages long-running background tasks:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import time
@@ -51,7 +52,7 @@ class DaemonManager:
     async def start(self) -> None:
         logger.debug("Entered into DaemonManager.start")
         self._running = True
-        for task_id, task in self._tasks.items():
+        for _task_id, task in self._tasks.items():
             if task.status == "stopped":
                 await self._start_task(task)
 
@@ -393,9 +394,6 @@ class DaemonManager:
 
 # --- Cron helpers ---
 
-import calendar as _calendar
-import datetime as _datetime
-
 
 def _validate_cron_expr(expr: str) -> None:
     """Validate a 5-field cron expression. Raises ValueError on invalid syntax."""
@@ -406,7 +404,7 @@ def _validate_cron_expr(expr: str) -> None:
         (0, 59, "minute"), (0, 23, "hour"), (1, 31, "day"),
         (1, 12, "month"), (0, 7, "weekday"),
     ]
-    for field_val, (lo, hi, name) in zip(fields, ranges):
+    for field_val, (lo, hi, name) in zip(fields, ranges, strict=True):
         for part in field_val.split(","):
             part = part.strip()
             if part == "*":
@@ -461,13 +459,13 @@ def _next_cron_interval(cron_expr: str) -> float:
     the sleep interval needed. Capped at 60s for responsiveness.
     """
     logger.debug(f"Entered into _next_cron_interval: cron={cron_expr}")
-    now = _datetime.datetime.now()
+    now = datetime.datetime.now()
     fields = cron_expr.strip().split()
     minute_f, hour_f, day_f, month_f, weekday_f = fields
 
     # Check each minute for up to 2 hours ahead
-    current = now.replace(second=0, microsecond=0) + _datetime.timedelta(minutes=1)
-    deadline = now + _datetime.timedelta(hours=2)
+    current = now.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+    deadline = now + datetime.timedelta(hours=2)
 
     while current <= deadline:
         wd = (current.weekday() + 1) % 7  # Convert to 0=Sun for cron compat
@@ -479,7 +477,7 @@ def _next_cron_interval(cron_expr: str) -> float:
             delta = (current - now).total_seconds()
             return min(max(delta, 1.0), 60.0)
 
-        current += _datetime.timedelta(minutes=1)
+        current += datetime.timedelta(minutes=1)
 
     # No match in next 2 hours — check every 60s
     return 60.0

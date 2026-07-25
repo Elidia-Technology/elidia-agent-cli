@@ -21,11 +21,19 @@ class PortalToolBridge:
     async def discover_tools(self) -> list[dict[str, Any]]:
         logger.debug("Entered into discover_tools")
         try:
-            response = await self._client._get("/tools")
-            data = response if isinstance(response, dict) else {}
-            self._tools = data.get("tools", data.get("data", []))
-            logger.info(f"Discovered {len(self._tools)} portal tools")
-            return self._tools
+            async with httpx.AsyncClient(
+                timeout=30,
+                headers={
+                    "Authorization": f"Bearer {self._client._api_key}",
+                    "Content-Type": "application/json",
+                },
+            ) as http:
+                resp = await http.get(f"{self._client._base_url}/tools")
+                resp.raise_for_status()
+                data = resp.json()
+                self._tools = data.get("tools", data.get("data", []))
+                logger.info(f"Discovered {len(self._tools)} portal tools")
+                return self._tools
         except Exception as e:
             logger.warning(f"Failed to discover portal tools: {e}")
             return []
