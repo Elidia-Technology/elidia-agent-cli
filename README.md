@@ -144,4 +144,4 @@ elidia/
 
 ## License
 
-MIT
+Proprietary — Copyright © 2026 Elidia Technology Pvt Ltd. All Rights Reserved. See [LICENSE](LICENSE) for details.

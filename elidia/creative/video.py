@@ -15,6 +15,8 @@ from typing import Any
 
 import httpx
 
+from elidia.api.client import AiUtilsClient
+
 logger = logging.getLogger(__name__)
 
 VIDEO_MODELS = {
@@ -40,13 +42,12 @@ class VideoResult:
 
 
 async def generate_video(
-    api_key: str,
+    client: AiUtilsClient,
     prompt: str,
     model: str = DEFAULT_MODEL,
     duration: int = 5,
     image_path: str | None = None,
     output_dir: Path | None = None,
-    base_url: str = "https://developer.aiutils.io/v1",
     poll_interval: float = 5.0,
     max_wait: float = 300.0,
 ) -> VideoResult:
@@ -70,16 +71,16 @@ async def generate_video(
         payload["image"] = base64.b64encode(img_bytes).decode("ascii")
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {client._api_key}",
         "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"),
+        base_url=client._base_url,
         headers=headers,
         timeout=httpx.Timeout(30.0, connect=10.0),
-    ) as client:
-        response = await client.post("/videos/generations", json=payload)
+    ) as http:
+        response = await http.post("/videos/generations", json=payload)
 
         if response.status_code == 401:
             raise RuntimeError("Invalid API key for video generation")
@@ -105,7 +106,7 @@ async def generate_video(
             await asyncio.sleep(poll_interval)
             waited += poll_interval
 
-            status_resp = await client.get(f"/videos/generations/{job_id}")
+            status_resp = await http.get(f"/videos/generations/{job_id}")
             if status_resp.status_code >= 400:
                 logger.warning(f"Poll error {status_resp.status_code} for job {job_id}")
                 continue

@@ -88,7 +88,7 @@ class AgentLoop:
             state.exec_mode = mode_decision.mode
             yield AgentEvent(kind="mode_info", data={
                 "exec_mode": state.exec_mode.value,
-                "confidence": mode_decision.confidence,
+                "cost_label": mode_decision.cost_label,
                 "reason": mode_decision.reason,
             })
         except Exception as e:
@@ -417,14 +417,13 @@ class AgentLoop:
         try:
             result = await run_consensus(
                 client=self._client,
-                message=user_text,
-                context=[m.content for m in state.messages[:-1]],
+                messages=[ChatMessage(role=m.role, content=m.content) for m in state.messages],
             )
         except Exception as e:
             yield AgentEvent(kind="error", data=f"Consensus failed: {e}")
             return
 
-        output_parts = [f"**Consensus Result** (agreement: {result.agreement_level}, confidence: {result.confidence:.0%})\n"]
+        output_parts = [f"**Consensus Result** (agreement: {result.agreement}, confidence: {result.confidence:.0%})\n"]
         output_parts.append(result.synthesis)
         output_parts.append("\n\n---\n**Individual Responses:**")
         for r in result.responses:

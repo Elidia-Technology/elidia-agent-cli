@@ -1,21 +1,57 @@
-MIT License
+Elidia Technology Pvt Ltd — PROPRIETARY SOFTWARE LICENSE NOTICE
 
-Copyright (c) 2026 AiUtils Team
+Copyright © 2026 Elidia Technology Pvt Ltd. All Rights Reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Author: Saleem Ahmad
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This software, including but not limited to all source code, object code,
+documentation, architecture, algorithms, artificial intelligence models,
+machine learning pipelines, embeddings, datasets, APIs, workflows,
+knowledge graphs, prompts, and related materials (collectively referred to
+as the "Software"), is proprietary and confidential intellectual property
+of Elidia Technology Pvt Ltd.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The Software contains trade secrets and confidential information protected
+under applicable intellectual property laws, including but not limited to
+copyright law, trade secret law, patent law, and international intellectual
+property treaties.
+
+Unauthorized use, reproduction, copying, modification, merging,
+distribution, sublicensing, sale, leasing, transfer, publication, or
+disclosure of the Software, in whole or in part, is strictly prohibited
+without prior written authorization from Elidia Technology Pvt Ltd.
+
+Except where explicitly permitted under applicable law, any attempt to
+reverse engineer, decompile, disassemble, derive source code, extract
+underlying algorithms, replicate system architecture, reproduce training
+processes, or otherwise attempt to discover the internal design or logic of
+the Software is strictly prohibited.
+
+Access to the Software does not grant any ownership rights. All rights,
+title, and interest in and to the Software, including all intellectual
+property rights, remain exclusively with Elidia Technology Pvt Ltd.
+
+The Software is provided strictly under a separate written license
+agreement. Possession, installation, or access to the Software does not
+grant permission to use it unless a valid license agreement has been
+executed with Elidia Technology Pvt Ltd.
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+ELIDIA TECHNOLOGY PVT LTD BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+This notice and any associated license agreement shall be governed by and
+interpreted in accordance with the laws of India.
+
+This protection extends to all artificial intelligence components,
+including training data pipelines, prompt engineering frameworks,
+model orchestration logic, and retrieval architectures implemented
+within the Software.
+
+For licensing inquiries contact:
+Elidia Technology Pvt Ltd
+Email: support@aiutils.io

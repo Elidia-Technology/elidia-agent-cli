@@ -7,15 +7,15 @@ name = "elidia-cli"
 version = "0.1.0"
 description = "Elidia — Universal AI Agent for your terminal"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Proprietary"}
 requires-python = ">=3.11"
-authors = [{name = "AiUtils Team", email = "team@aiutils.io"}]
+authors = [{name = "Elidia Technology Pvt Ltd", email = "support@aiutils.io"}]
 keywords = ["ai", "agent", "cli", "llm", "mcp", "coding-assistant", "terminal"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

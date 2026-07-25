@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from elidia.api.client import AiUtilsClient
+
 logger = logging.getLogger(__name__)
 
 TTS_MODELS = {
@@ -53,12 +55,11 @@ class MusicResult:
 
 
 async def generate_speech(
-    api_key: str,
+    client: AiUtilsClient,
     text: str,
     model: str = DEFAULT_TTS_MODEL,
     voice: str = "alloy",
     output_dir: Path | None = None,
-    base_url: str = "https://developer.aiutils.io/v1",
 ) -> AudioResult:
     logger.debug(f"Entered into generate_speech: model={model}, voice={voice}, text_len={len(text)}")
     start = time.monotonic()
@@ -74,14 +75,14 @@ async def generate_speech(
     }
 
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"),
+        base_url=client._base_url,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {client._api_key}",
             "Content-Type": "application/json",
         },
         timeout=httpx.Timeout(60.0, connect=10.0),
-    ) as client:
-        response = await client.post("/audio/speech", json=payload)
+    ) as http:
+        response = await http.post("/audio/speech", json=payload)
 
         if response.status_code == 401:
             raise RuntimeError("Invalid API key for audio generation")
@@ -122,12 +123,11 @@ async def generate_speech(
 
 
 async def generate_music(
-    api_key: str,
+    client: AiUtilsClient,
     prompt: str,
     model: str = DEFAULT_MUSIC_MODEL,
     duration: int = 30,
     output_dir: Path | None = None,
-    base_url: str = "https://developer.aiutils.io/v1",
 ) -> MusicResult:
     logger.debug(f"Entered into generate_music: model={model}, prompt={prompt[:60]!r}")
     start = time.monotonic()
@@ -145,14 +145,14 @@ async def generate_music(
     }
 
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"),
+        base_url=client._base_url,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {client._api_key}",
             "Content-Type": "application/json",
         },
         timeout=httpx.Timeout(120.0, connect=10.0),
-    ) as client:
-        response = await client.post("/audio/music", json=payload)
+    ) as http:
+        response = await http.post("/audio/music", json=payload)
 
         if response.status_code == 401:
             raise RuntimeError("Invalid API key for music generation")

@@ -15,6 +15,8 @@ from typing import Any
 
 import httpx
 
+from elidia.api.client import AiUtilsClient
+
 logger = logging.getLogger(__name__)
 
 IMAGE_MODELS = {
@@ -44,13 +46,12 @@ class ImageResult:
 
 
 async def generate_image(
-    api_key: str,
+    client: AiUtilsClient,
     prompt: str,
     model: str = DEFAULT_MODEL,
     width: int = 1024,
     height: int = 1024,
     output_dir: Path | None = None,
-    base_url: str = "https://developer.aiutils.io/v1",
 ) -> ImageResult:
     logger.debug(f"Entered into generate_image: model={model}, prompt={prompt[:60]!r}")
     start = time.monotonic()
@@ -74,14 +75,14 @@ async def generate_image(
         payload["size"] = f"{width}x{height}"
 
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"),
+        base_url=client._base_url,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {client._api_key}",
             "Content-Type": "application/json",
         },
         timeout=httpx.Timeout(120.0, connect=10.0),
-    ) as client:
-        response = await client.post("/images/generations", json=payload)
+    ) as http:
+        response = await http.post("/images/generations", json=payload)
 
         if response.status_code == 401:
             raise RuntimeError("Invalid API key for image generation")

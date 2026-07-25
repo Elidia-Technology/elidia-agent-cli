@@ -762,23 +762,23 @@ class ElidiaRepl:
             if sub_cmd == "image":
                 self._console.print("[cyan]Generating image...[/cyan]")
                 result = await generate_image(self._client, prompt, model=model)
-                self._console.print(f"[green]v[/green] Saved: {result['path']}")
-                display_image(result["path"])
+                self._console.print(f"[green]v[/green] Saved: {result.file_path}")
+                display_image(result.file_path)
 
             elif sub_cmd == "video":
                 self._console.print("[cyan]Generating video (this may take a few minutes)...[/cyan]")
                 result = await generate_video(self._client, prompt, model=model)
-                self._console.print(f"[green]v[/green] Saved: {result['path']}")
+                self._console.print(f"[green]v[/green] Saved: {result.file_path}")
 
             elif sub_cmd == "speech":
                 self._console.print("[cyan]Generating speech...[/cyan]")
                 result = await generate_speech(self._client, prompt, voice=voice)
-                self._console.print(f"[green]v[/green] Saved: {result['path']}")
+                self._console.print(f"[green]v[/green] Saved: {result.file_path}")
 
             elif sub_cmd == "music":
                 self._console.print("[cyan]Generating music...[/cyan]")
                 result = await generate_music(self._client, prompt)
-                self._console.print(f"[green]v[/green] Saved: {result['path']}")
+                self._console.print(f"[green]v[/green] Saved: {result.file_path}")
 
             else:
                 self._console.print(f"[yellow]Unknown create type: {sub_cmd}[/yellow]")
@@ -945,7 +945,7 @@ class ElidiaRepl:
             f"Enabled: {'yes' if stats['enabled'] else 'no'}\n"
             f"Size: {stats['size']} / {stats['max_size']}\n"
             f"Hits: {stats['hits']} | Misses: {stats['misses']}\n"
-            f"Hit rate: {stats['hit_rate']:.0%}",
+            f"Hit rate: {stats['hit_rate_pct']:.1f}%",
             title="Cache",
             border_style="blue",
         ))
