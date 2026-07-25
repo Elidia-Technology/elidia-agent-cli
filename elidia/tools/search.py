@@ -1,5 +1,6 @@
 import html
 import logging
+import os
 import re
 from urllib.parse import quote_plus
 
@@ -9,9 +10,58 @@ from elidia.tools.base import ToolDefinition, ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
 
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "").strip()
 
-async def _web_search(query: str, max_results: int = 5) -> ToolResult:
-    logger.debug(f"Entered into _web_search: query={query!r}, max_results={max_results}")
+
+async def _tavily_search(query: str, max_results: int = 5) -> ToolResult:
+    """Search using Tavily API (richer results, news categorization)."""
+    logger.debug(f"Entered into _tavily_search: query={query!r}, max_results={max_results}")
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": TAVILY_API_KEY,
+                    "query": query,
+                    "max_results": max_results,
+                    "search_depth": "basic",
+                },
+                headers={"Content-Type": "application/json"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        results = data.get("results", [])
+        if not results:
+            return ToolResult(content=f"No results found for: {query}")
+
+        lines: list[str] = []
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "")
+            url = r.get("url", "")
+            content = r.get("content", "")
+            score = r.get("score", 0)
+            lines.append(f"{i}. {title}")
+            lines.append(f"   {url}")
+            if content:
+                lines.append(f"   {content[:300]}")
+            lines.append("")
+
+        return ToolResult(
+            content="\n".join(lines).strip(),
+            metadata={"result_count": len(results), "provider": "tavily"},
+        )
+    except httpx.TimeoutException:
+        return ToolResult(content="Search request timed out", is_error=True)
+    except Exception as e:
+        logger.warning(f"Tavily search failed, falling back to DuckDuckGo: {e}")
+        return await _ddg_search(query, max_results)
+
+
+async def _ddg_search(query: str, max_results: int = 5) -> ToolResult:
+    """Search using DuckDuckGo HTML (no API key required)."""
+    logger.debug(f"Entered into _ddg_search: query={query!r}, max_results={max_results}")
 
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
     headers = {
@@ -39,12 +89,22 @@ async def _web_search(query: str, max_results: int = 5) -> ToolResult:
 
         return ToolResult(
             content="\n".join(lines).strip(),
-            metadata={"result_count": len(results)},
+            metadata={"result_count": len(results), "provider": "duckduckgo"},
         )
     except httpx.TimeoutException:
         return ToolResult(content="Search request timed out", is_error=True)
     except Exception as e:
         return ToolResult(content=f"Search error: {e}", is_error=True)
+
+
+async def _web_search(query: str, max_results: int = 5) -> ToolResult:
+    """Search the web using Tavily (if configured) or DuckDuckGo as fallback."""
+    logger.debug(f"Entered into _web_search: query={query!r}, max_results={max_results}")
+
+    if TAVILY_API_KEY:
+        return await _tavily_search(query, max_results)
+
+    return await _ddg_search(query, max_results)
 
 
 def _parse_ddg_html(body: str, max_results: int) -> list[tuple[str, str, str]]:
