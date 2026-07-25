@@ -1,0 +1,12 @@
+include LICENSE
+include README.md
+include CHANGELOG.md
+include pyproject.toml
+
+recursive-include elidia *.py *.typed
+recursive-include docs *.md
+
+prune tests
+prune .github
+prune dist
+prune build

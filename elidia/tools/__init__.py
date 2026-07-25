@@ -1,0 +1,28 @@
+from elidia.tools.base import ToolDefinition, ToolRegistry, ToolResult
+from elidia.tools.fetch import register_fetch_tools
+from elidia.tools.filesystem import register_filesystem_tools
+from elidia.tools.git import register_git_tools
+from elidia.tools.search import register_search_tools
+from elidia.tools.terminal import register_terminal_tools
+
+__all__ = [
+    "ToolDefinition",
+    "ToolRegistry",
+    "ToolResult",
+    "register_fetch_tools",
+    "register_filesystem_tools",
+    "register_git_tools",
+    "register_search_tools",
+    "register_terminal_tools",
+    "create_default_registry",
+]
+
+
+def create_default_registry() -> ToolRegistry:
+    registry = ToolRegistry()
+    register_filesystem_tools(registry)
+    register_terminal_tools(registry)
+    register_git_tools(registry)
+    register_search_tools(registry)
+    register_fetch_tools(registry)
+    return registry

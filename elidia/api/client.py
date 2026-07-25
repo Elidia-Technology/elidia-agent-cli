@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 import httpx
 
@@ -49,6 +49,11 @@ class AiUtilsClient:
     async def _get_client(self) -> httpx.AsyncClient:
         logger.debug("Entered into _get_client")
         if self._client is None or self._client.is_closed:
+            pool_limits = httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            )
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
                 headers={
@@ -57,6 +62,8 @@ class AiUtilsClient:
                     "User-Agent": "elidia-cli/0.1.0",
                 },
                 timeout=httpx.Timeout(self._timeout, connect=10.0),
+                limits=pool_limits,
+                http2=True,
             )
         return self._client
 

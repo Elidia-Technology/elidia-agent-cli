@@ -1,7 +1,7 @@
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
