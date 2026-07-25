@@ -32,6 +32,9 @@ from elidia.db.database import Database
 from elidia.mcp.registry import MCPRegistry
 from elidia.memory.auto import AutoMemory
 from elidia.memory.store import MemoryStore, MemoryTier
+from elidia.memory.outcomes import OutcomeTracker
+from elidia.memory.patterns import PatternLearner
+from elidia.models.adaptive import AdaptiveRouter
 from elidia.models.router import ModelRouter
 from elidia.modes.budget import BudgetGovernor
 from elidia.modes.thinking import ThinkingLevel, describe_level, parse_thinking_level
@@ -163,6 +166,11 @@ class ElidiaRepl:
         self._memory_store = MemoryStore()
         self._memory_store.open()
         self._auto_memory = AutoMemory(self._memory_store)
+
+        # Adaptive model routing — learns which model works best per task type
+        self._outcome_tracker = OutcomeTracker(self._memory_store)
+        self._pattern_learner = PatternLearner(self._outcome_tracker)
+        self._adaptive_router = AdaptiveRouter(self._router, self._pattern_learner, self._outcome_tracker)
         self._history_search = HistorySearch(self._db)
 
         self._project_rules = load_project_rules()
@@ -188,7 +196,7 @@ class ElidiaRepl:
             client=self._client,
             tool_registry=self._tool_registry,
             mcp_registry=self._mcp_registry,
-            model_router=self._router,
+            model_router=self._adaptive_router,
             permission_manager=self._permission_mgr,
             audit=self._audit,
             budget=self._budget,
