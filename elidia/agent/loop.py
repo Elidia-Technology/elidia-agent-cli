@@ -117,6 +117,11 @@ class AgentLoop:
                 yield event
             return
 
+        if state.exec_mode == ExecMode.HARNESS:
+            async for event in self._run_harness(state, user_text, session_id):
+                yield event
+            return
+
         effective_max_loops = min(self._max_loops, caps.max_loops)
         all_tool_schemas = self._build_tool_schemas() if caps.allow_tools else []
 
@@ -507,3 +512,151 @@ class AgentLoop:
             "total_cost_dt": 0.0,
             "exec_mode": "consensus",
         })
+
+    async def _run_harness(
+        self, state: AgentState, user_text: str, session_id: str,
+    ) -> AsyncIterator[AgentEvent]:
+        """SUPERVISOR node — task decomposition + parallel agent execution.
+
+        Uses AutonomousExecutor to:
+        1. Decompose the task into subtasks (LLM-based planning)
+        2. Execute each subtask via the agent loop's tool infrastructure
+        3. Replan on failure, retry, or skip
+        4. Checkpoint after each subtask for resume capability
+        """
+        logger.debug("Entered into _run_harness")
+
+        yield AgentEvent(kind="thinking", data={
+            "model": state.model,
+            "reason": "Harness mode — decomposing task into subtasks",
+        })
+
+        from elidia.modes.autonomous import AutonomousExecutor, AutonomousState
+
+        executor = AutonomousExecutor(
+            client=self._client,
+            planner_model=state.model,
+            max_replans=3,
+            max_retries_per_task=2,
+        )
+
+        # Build an execute function that uses the agent loop's tools
+        async def execute_subtask(subtask_text: str) -> str:
+            subtask_state = AgentState(
+                messages=[ChatMessage(role="user", content=subtask_text)],
+                mode=state.mode,
+                thinking_level=state.thinking_level,
+            )
+            subtask_state.exec_mode = ExecMode.DIRECT
+            subtask_state.model = state.model
+
+            caps = get_caps(state.thinking_level)
+            all_tool_schemas = self._build_tool_schemas() if caps.allow_tools else []
+
+            max_loops = min(5, caps.max_loops)
+            results: list[str] = []
+
+            while subtask_state.loop_count < max_loops:
+                subtask_state.loop_count += 1
+                api_messages = self._build_api_messages(subtask_state, user_message=subtask_text)
+
+                request_payload: dict[str, Any] = {
+                    "model": subtask_state.model,
+                    "messages": api_messages,
+                    "stream": False,
+                    "temperature": 0.3,
+                }
+                if all_tool_schemas:
+                    request_payload["tools"] = all_tool_schemas
+                    request_payload["tool_choice"] = "auto"
+
+                response = await self._client.chat_completion(**request_payload)
+                content = response.content
+                tool_calls = getattr(response, "tool_calls", None) or []
+
+                if tool_calls and all_tool_schemas:
+                    for tc in tool_calls:
+                        tool_name = tc.get("function", {}).get("name", "") if isinstance(tc, dict) else getattr(tc, "function", {}).get("name", "")
+                        tool_args = tc.get("function", {}).get("arguments", {}) if isinstance(tc, dict) else getattr(tc, "function", {}).get("arguments", {})
+                        if isinstance(tool_args, str):
+                            try:
+                                import json
+                                tool_args = json.loads(tool_args)
+                            except Exception:
+                                tool_args = {}
+                        if tool_name:
+                            result_text, is_error = await self._execute_tool(tool_name, tool_args)
+                            results.append(f"Tool {tool_name}: {result_text[:500]}")
+                elif content:
+                    results.append(content)
+                    break
+                else:
+                    break
+
+            return "\n".join(results) if results else "No output produced"
+
+        try:
+            async for event in executor.run(
+                task=user_text,
+                execute_fn=execute_subtask,
+            ):
+                if event.kind == "plan":
+                    subtask_count = event.data.get("subtask_count", 0)
+                    subtasks = event.data.get("subtasks", [])
+                    yield AgentEvent(kind="tool_call", data={
+                        "name": "plan",
+                        "arguments": {"subtask_count": subtask_count},
+                    })
+                    for st in subtasks:
+                        yield AgentEvent(kind="tool_result", data={
+                            "name": f"subtask_{st['id']}",
+                            "content": st["task"],
+                        })
+
+                elif event.kind == "subtask_start":
+                    yield AgentEvent(kind="tool_call", data={
+                        "name": f"subtask_{event.data['id']}",
+                        "arguments": {
+                            "task": event.data["task"],
+                            "attempt": event.data["attempt"],
+                        },
+                    })
+
+                elif event.kind == "subtask_result":
+                    status = event.data["status"]
+                    result_preview = event.data.get("result_preview", "")[:300]
+                    yield AgentEvent(kind="tool_result", data={
+                        "name": f"subtask_{event.data['id']}",
+                        "content": f"[{status}] {result_preview}",
+                        "is_error": status == "failed",
+                    })
+
+                elif event.kind == "replan":
+                    yield AgentEvent(kind="tool_result", data={
+                        "name": "replan",
+                        "content": event.data.get("reason", "Replan triggered"),
+                    })
+
+                elif event.kind == "done":
+                    completed = event.data.get("completed", 0)
+                    total = event.data.get("total_subtasks", 0)
+                    failed = event.data.get("failed", 0)
+
+                    summary_parts = [f"**Task Complete:** {completed}/{total} subtasks completed"]
+                    if failed:
+                        summary_parts.append(f" ({failed} failed)")
+                    yield AgentEvent(kind="content", data="\n".join(summary_parts))
+                    yield AgentEvent(kind="done", data={
+                        "loops": total,
+                        "tools_called": [f"subtask_{i}" for i in range(1, total + 1)],
+                        "total_tokens_in": 0,
+                        "total_tokens_out": 0,
+                        "total_cost_dt": 0.0,
+                        "exec_mode": "harness",
+                    })
+
+                elif event.kind == "error":
+                    yield AgentEvent(kind="error", data=event.data.get("message", str(event.data)))
+
+        except Exception as e:
+            yield AgentEvent(kind="error", data=f"Harness execution failed: {e}")
