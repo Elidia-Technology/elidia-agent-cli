@@ -21,30 +21,13 @@ TASK_TYPE_DEFAULTS = {
     "cheap": "gpt-5-mini",
 }
 
-CODE_KEYWORDS = {
-    "code", "function", "debug", "refactor", "test", "implement", "fix", "bug",
-    "class", "method", "api", "endpoint", "database", "schema", "migration",
-    "deploy", "dockerfile", "ci", "lint", "typescript", "python", "rust", "java",
-}
-
-REASONING_KEYWORDS = {
-    "analyze", "compare", "evaluate", "prove", "derive", "calculate",
-    "strategy", "plan", "architecture", "tradeoff", "reasoning", "logic",
-    "math", "theorem", "proof", "optimize",
-}
-
-CREATIVE_KEYWORDS = {
-    "generate image", "create image", "draw", "design", "logo", "illustration",
-    "video", "animation", "music", "song", "voice", "voiceover", "audio",
-    "narration", "tts", "text to speech",
-}
-
 
 class ModelRouter:
     """Selects the best model for a given task.
 
-    Phase 0: static rule-based routing.
-    Phase 2 will replace this with adaptive routing based on outcome_memory.
+    Routes by mode (LLM-classified or user-specified), not keyword matching.
+    The mode classifier (classify_mode) determines HOW to execute; the router
+    determines WHICH model to use based on that classification.
     """
 
     def __init__(self, config_models: dict[str, str] | None = None):
@@ -78,7 +61,19 @@ class ModelRouter:
         )
 
     def _classify_task(self, message: str, mode: str) -> str:
-        """Classify the task type from the message content and mode."""
+        """Classify the task type from the mode (LLM-determined or user-specified).
+
+        Mode-to-task mapping:
+          code      → code tasks (claude-sonnet-5)
+          research  → reasoning tasks (deepseek-reasoner)
+          think     → reasoning (deepseek-reasoner)
+          create    → creative tasks (gpt-5)
+          chat      → general chat (deepseek-chat), or cheap for trivial messages
+
+        No keyword/regex matching — the LLM classifier (classify_mode) determines
+        the execution mode, and this method simply maps that mode to the appropriate
+        model category.
+        """
         logger.debug(f"Entered into _classify_task: mode={mode}")
 
         if mode == "code":
@@ -88,23 +83,9 @@ class ModelRouter:
         if mode == "create":
             return "creative"
 
-        msg_lower = message.lower()
-
-        for kw in CREATIVE_KEYWORDS:
-            if kw in msg_lower:
-                return "creative"
-
-        words = set(msg_lower.split())
-
-        code_score = len(words & CODE_KEYWORDS)
-        reasoning_score = len(words & REASONING_KEYWORDS)
-
-        if code_score >= 2:
-            return "code"
-        if reasoning_score >= 2:
-            return "reasoning"
-
-        if len(message) < 50:
+        # For default chat mode: use cheap model for very short messages,
+        # standard chat model for everything else.
+        if len(message.strip()) < 20:
             return "cheap"
 
         return "chat"
