@@ -113,6 +113,40 @@ class DaemonManager:
             self._callbacks[task_id] = callback
         return task_id
 
+    def add_cron_schedule(
+        self,
+        name: str,
+        cron_expr: str,
+        command: str = "",
+        callback: Callable[..., Coroutine[Any, Any, None]] | None = None,
+    ) -> str:
+        """Add a cron-expression-based schedule.
+
+        Supports standard 5-field cron syntax:
+          minute hour day-of-month month day-of-week
+
+        Examples:
+          "0 9 * * 1-5"  → 9:00 AM weekdays
+          "*/15 * * * *"  → every 15 minutes
+          "0 0 1 * *"     → midnight on the 1st of each month
+        """
+        logger.debug(f"Entered into add_cron_schedule: name={name}, cron={cron_expr}")
+        _validate_cron_expr(cron_expr)
+        task_id = f"cron_{name}_{int(time.time())}"
+        task = DaemonTask(
+            id=task_id,
+            name=name,
+            type="schedule",
+            config={
+                "cron": cron_expr,
+                "command": command,
+            },
+        )
+        self._tasks[task_id] = task
+        if callback:
+            self._callbacks[task_id] = callback
+        return task_id
+
     def add_webhook(
         self,
         name: str,
@@ -242,12 +276,20 @@ class DaemonManager:
 
     async def _run_schedule(self, task: DaemonTask) -> None:
         logger.debug(f"Entered into _run_schedule: id={task.id}")
-        interval = task.config.get("interval", 60.0)
+        cron_expr = task.config.get("cron", "")
+        interval = task.config.get("interval", 0.0)
         command = task.config.get("command", "")
 
         try:
             while self._running:
-                await asyncio.sleep(interval)
+                if cron_expr:
+                    sleep_s = _next_cron_interval(cron_expr)
+                elif interval > 0:
+                    sleep_s = interval
+                else:
+                    sleep_s = 60.0
+
+                await asyncio.sleep(sleep_s)
                 task.run_count += 1
                 task.last_run = time.time()
 
@@ -347,3 +389,97 @@ class DaemonManager:
             task.status = "error"
             task.error = str(e)
             logger.warning(f"Webhook server error: {e}")
+
+
+# --- Cron helpers ---
+
+import calendar as _calendar
+import datetime as _datetime
+
+
+def _validate_cron_expr(expr: str) -> None:
+    """Validate a 5-field cron expression. Raises ValueError on invalid syntax."""
+    fields = expr.strip().split()
+    if len(fields) != 5:
+        raise ValueError(f"Cron expression must have 5 fields, got {len(fields)}: {expr}")
+    ranges = [
+        (0, 59, "minute"), (0, 23, "hour"), (1, 31, "day"),
+        (1, 12, "month"), (0, 7, "weekday"),
+    ]
+    for field_val, (lo, hi, name) in zip(fields, ranges):
+        for part in field_val.split(","):
+            part = part.strip()
+            if part == "*":
+                continue
+            if "/" in part:
+                base, _, step_str = part.partition("/")
+                if base == "*":
+                    base = str(lo)
+                if not step_str.isdigit():
+                    raise ValueError(f"Invalid step in cron field '{name}': {part}")
+                part = base
+            if "-" in part:
+                a, _, b = part.partition("-")
+                part = a
+            if part == "*":
+                continue
+            if not part.isdigit():
+                raise ValueError(f"Invalid cron field '{name}': {part}")
+            n = int(part)
+            if not (lo <= n <= hi):
+                raise ValueError(f"Cron field '{name}' value {n} out of range [{lo},{hi}]")
+
+
+def _cron_field_matches(value: int, field: str, lo: int) -> bool:
+    """Check if a single value matches a cron field expression."""
+    if field == "*":
+        return True
+    for alt in field.split(","):
+        alt = alt.strip()
+        step = 1
+        if "/" in alt:
+            base_str, _, step_str = alt.partition("/")
+            step = int(step_str)
+            alt = base_str
+        if "-" in alt:
+            a_str, _, b_str = alt.partition("-")
+            a, b = int(a_str), int(b_str)
+            if a <= value <= b:
+                return (value - a) % step == 0
+        elif alt == "*":
+            return value % step == 0
+        else:
+            if int(alt) == value:
+                return True
+    return False
+
+
+def _next_cron_interval(cron_expr: str) -> float:
+    """Calculate seconds until the next cron trigger time.
+
+    Finds the next datetime that matches the cron expression and returns
+    the sleep interval needed. Capped at 60s for responsiveness.
+    """
+    logger.debug(f"Entered into _next_cron_interval: cron={cron_expr}")
+    now = _datetime.datetime.now()
+    fields = cron_expr.strip().split()
+    minute_f, hour_f, day_f, month_f, weekday_f = fields
+
+    # Check each minute for up to 2 hours ahead
+    current = now.replace(second=0, microsecond=0) + _datetime.timedelta(minutes=1)
+    deadline = now + _datetime.timedelta(hours=2)
+
+    while current <= deadline:
+        wd = (current.weekday() + 1) % 7  # Convert to 0=Sun for cron compat
+        if (_cron_field_matches(current.minute, minute_f, 0)
+                and _cron_field_matches(current.hour, hour_f, 0)
+                and _cron_field_matches(current.day, day_f, 1)
+                and _cron_field_matches(current.month, month_f, 1)
+                and _cron_field_matches(wd, weekday_f, 0)):
+            delta = (current - now).total_seconds()
+            return min(max(delta, 1.0), 60.0)
+
+        current += _datetime.timedelta(minutes=1)
+
+    # No match in next 2 hours — check every 60s
+    return 60.0
