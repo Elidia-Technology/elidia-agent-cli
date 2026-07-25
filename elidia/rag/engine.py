@@ -98,6 +98,10 @@ class RagEngine:
             CREATE INDEX IF NOT EXISTS idx_rag_project ON rag_docs(project_path);
             CREATE INDEX IF NOT EXISTS idx_rag_hash ON rag_docs(file_hash);
             CREATE INDEX IF NOT EXISTS idx_rag_content_type ON rag_docs(content_type);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(
+                content, content_type, source, content='rag_docs', content_rowid='rowid'
+            );
         """)
 
         try:
@@ -107,6 +111,12 @@ class RagEngine:
         except sqlite3.OperationalError as e:
             if "already exists" not in str(e).lower():
                 raise
+
+        # Rebuild FTS index to sync with rag_docs content
+        try:
+            self._conn.execute("INSERT INTO rag_fts(rag_fts) VALUES('rebuild')")
+        except sqlite3.OperationalError:
+            pass
         self._conn.commit()
 
     async def ingest(
@@ -214,6 +224,53 @@ class RagEngine:
         content_types: list[str] | None = None,
     ) -> list[SearchResult]:
         logger.debug(f"Entered into _search_bm25: query={query!r}")
+
+        # Use FTS5 full-text search for proper BM25 scoring
+        try:
+            results: list[SearchResult] = []
+            fts_query = _build_fts_query(query)
+
+            fts_rows = self._conn.execute(
+                "SELECT rowid, rank FROM rag_fts WHERE rag_fts MATCH ? ORDER BY rank LIMIT ?",
+                [fts_query, limit * 2],
+            ).fetchall()
+
+            if fts_rows:
+                rowids = [str(r[0]) for r in fts_rows]
+                rank_map = {r[0]: r[1] for r in fts_rows if r[1] is not None}
+
+                conditions = [f"d.rowid IN ({','.join('?' for _ in rowids)})"]
+                params: list[Any] = rowids
+
+                if project_path:
+                    conditions.append("d.project_path = ?")
+                    params.append(project_path)
+                if content_types:
+                    placeholders = ",".join("?" for _ in content_types)
+                    conditions.append(f"d.content_type IN ({placeholders})")
+                    params.extend(content_types)
+
+                where = " AND ".join(conditions)
+                rows = self._conn.execute(
+                    f"SELECT d.* FROM rag_docs d WHERE {where}", params
+                ).fetchall()
+
+                for row in rows:
+                    doc = self._row_to_doc(row)
+                    rank = rank_map.get(row[0], 0)
+                    score = 1.0 / (1.0 + abs(rank)) if rank else 0.5
+
+                    age_hours = (time.time() - doc.created_at) / 3600
+                    recency_boost = 1.0 / (1.0 + math.log1p(age_hours / 24))
+                    score *= (1.0 + 0.2 * recency_boost)
+
+                    results.append(SearchResult(document=doc, score=score, match_type="text"))
+
+                return results
+        except Exception as e:
+            logger.warning(f"FTS5 search failed, falling back to LIKE: {e}")
+
+        # Fallback: LIKE-based search when FTS5 is unavailable
         conditions = ["content LIKE ?"]
         params: list[Any] = [f"%{query}%"]
 
@@ -343,3 +400,30 @@ class RagEngine:
             start_line=row[10],
             end_line=row[11],
         )
+
+
+def _build_fts_query(query: str) -> str:
+    """Convert a natural-language query into an FTS5-safe MATCH expression.
+
+    Escapes special characters, splits into terms, and ANDs them together
+    for precision. Short-circuits for single-term or empty queries.
+    """
+    logger.debug(f"Entered into _build_fts_query: query={query!r}")
+    # FTS5 special characters that need escaping
+    special = set('"*()[]{}^~?:\\')
+    terms: list[str] = []
+    for raw in query.split():
+        word = raw.strip().lower()
+        if not word:
+            continue
+        # Escape special chars
+        clean = "".join(f"\\{c}" if c in special else c for c in word)
+        if len(clean) <= 2:
+            terms.append(clean)
+        else:
+            terms.append(f"{clean}*")
+    if not terms:
+        return query.strip().lower()
+    if len(terms) == 1:
+        return terms[0]
+    return " AND ".join(terms)
