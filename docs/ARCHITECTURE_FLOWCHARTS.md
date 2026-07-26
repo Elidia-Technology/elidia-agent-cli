@@ -723,3 +723,55 @@ graph LR
     MEM_STORE --> DB_DB
     API_CLIENT --> AUTH_KEY
 ```
+
+## 21. Skill Categories — Coverage Status (2026-07-26 audit)
+
+Audited against 11 requested skill categories. 5 exist today, 6 are gaps.
+Vision (built this session) is the template for how a new skill category
+gets wired in: a `tools/<category>.py` module registering one or more
+`ToolDefinition`s into `ToolRegistry`, permission-gated the same way every
+other tool already is (see §5, Tool Execution Pipeline).
+
+```mermaid
+flowchart TD
+    subgraph EXISTS["Exists today"]
+        FS["Filesystem Skills<br/>tools/filesystem.py"]
+        TERM["Terminal Skills<br/>tools/terminal.py"]
+        CODE["Code Skills<br/>tools/git.py + code mode routing"]
+        VIS["Vision Skills<br/>NEW 2026-07-26 — image upload + multimodal chat"]
+        API_P["API Skills — partial<br/>tools/fetch.py (raw HTTP) + MCP client (generic extensibility)"]
+    end
+
+    subgraph MISSING["Gap — no first-party tool"]
+        BROWSER["Browser Skills<br/>no automation — fetch.py is static GET only, no JS/interaction"]
+        OFFICE["Office Skills<br/>no docx/xlsx/pptx read or write"]
+        EMAIL["Email Skills<br/>no SMTP/IMAP/Gmail/Outlook integration"]
+        CAL["Calendar Skills<br/>no Google/Outlook Calendar integration"]
+        DB["Database Skills<br/>db/database.py is CLI's own local sqlite session store only —<br/>no connector for a user's external database"]
+        DESK["Desktop Skills<br/>moot — no Desktop app exists yet (Phase 4, unstarted)"]
+    end
+
+    TR[ToolRegistry] --> FS
+    TR --> TERM
+    TR --> CODE
+    TR --> VIS
+    TR --> API_P
+    TR -.->|not registered| BROWSER
+    TR -.->|not registered| OFFICE
+    TR -.->|not registered| EMAIL
+    TR -.->|not registered| CAL
+    TR -.->|not registered| DB
+
+    style MISSING fill:none,stroke:#a5432c,stroke-dasharray: 4 3
+    style EXISTS fill:none,stroke:#1f7a4c
+```
+
+**Security note on the 3 highest-risk gaps** (Email, Calendar, Database):
+all three need credential/OAuth handling and, for Database in particular,
+arbitrary-query risk against a real production system. Per §12 (Budget
+Governance) and the existing 4-tier permission model (§5), any
+implementation of these must default to the most restrictive tier
+(EVERY_TIME, not AUTO) and — for Database — should ship read-only by
+default with write access a separate, explicitly-granted capability. See
+the master plan (`06_CLI_AND_DESKTOP_MASTER_PLAN.md`, §4.4) for the
+phased build order.
