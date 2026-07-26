@@ -141,8 +141,20 @@ class TestBrowserScreenshotAndLinks:
 class TestBrowserSessionLifecycle:
     @pytest.mark.asyncio
     async def test_ensure_page_missing_playwright_raises_clear_error(self):
+        # Deliberately not using patch.dict("sys.modules", {"playwright.async_api": None}):
+        # that mutates real global import state and was observed to leak into later
+        # tests' unrelated lazy imports (e.g. test_database.py's `import sqlparse`)
+        # when the full suite runs in file order. Patching builtins.__import__ with a
+        # narrow side_effect only fails the one import this test cares about.
         session = BrowserSession()
-        with patch.dict("sys.modules", {"playwright.async_api": None}):
+        real_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "playwright.async_api":
+                raise ImportError("No module named 'playwright'")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
             with pytest.raises(RuntimeError, match="Playwright"):
                 await session._ensure_page()
 

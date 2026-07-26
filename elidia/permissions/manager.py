@@ -44,6 +44,8 @@ ACTION_TIERS: dict[str, PermissionTier] = {
     "file_write_external": PermissionTier.EVERY_TIME,
     "code_execute": PermissionTier.EVERY_TIME,
     "browser_interact": PermissionTier.EVERY_TIME,
+    "db_query": PermissionTier.EVERY_TIME,
+    "email_send": PermissionTier.EVERY_TIME,
 
     "keychain_access": PermissionTier.NEVER,
     "system_security": PermissionTier.NEVER,
@@ -52,6 +54,20 @@ ACTION_TIERS: dict[str, PermissionTier] = {
     "external_data_send": PermissionTier.NEVER,
     "force_push_main": PermissionTier.NEVER,
     "self_modify": PermissionTier.NEVER,
+}
+
+# Actions that must prompt on literally every call, forever — progressive
+# trust (TrustEngine) normally lets a repeatedly-approved EVERY_TIME action
+# auto-promote to no-prompt after enough clean approvals (see
+# _ask_permission below), which is the right behavior for something like
+# repeated file deletes in a familiar project. It is NOT the right behavior
+# for actions where a single unnoticed approval hands the agent a standing
+# capability with real external consequences — sending email or running SQL
+# against a live database as the user is a different risk class from
+# repeated file operations, so these are exempted from promotion entirely.
+NEVER_PROMOTE: set[str] = {
+    "db_query",
+    "email_send",
 }
 
 DESTRUCTIVE_PATTERNS = {"rm ", "rm -", "rmdir", "drop ", "truncate ", "delete ", "format "}
@@ -183,8 +199,11 @@ class PermissionManager:
     ) -> bool:
         logger.debug(f"Entered into _ask_permission: action={action}, tier={tier}")
 
-        # Check if trust has promoted this action (applies to SESSION + EVERY_TIME)
-        if self._trust and self._trust.is_promoted(action):
+        # Check if trust has promoted this action (applies to SESSION + EVERY_TIME,
+        # except NEVER_PROMOTE actions — see the set's docstring above)
+        if action in NEVER_PROMOTE:
+            pass
+        elif self._trust and self._trust.is_promoted(action):
             self._audit.log_permission_check(
                 action=action, tier=tier, approved=True,
                 method="trust_promoted", session_id=session_id,

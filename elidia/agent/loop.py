@@ -429,6 +429,10 @@ class AgentLoop:
             "read_pptx": "file_read",
             "write_docx": "file_write",
             "write_xlsx": "file_write",
+            "db_connect": "db_query",
+            "db_query": "db_query",
+            "db_list_tables": "db_query",
+            "db_describe_table": "db_query",
         }
         return action_map.get(tool_name, "mcp_call_session")
 

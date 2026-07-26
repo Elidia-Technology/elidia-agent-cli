@@ -241,7 +241,9 @@ class ElidiaRepl:
     async def cleanup(self) -> None:
         logger.debug("Entered into cleanup")
         from elidia.tools.browser import close_browser_session
+        from elidia.tools.database import close_database_session
         await close_browser_session()
+        close_database_session()
         if self._daemon:
             await self._daemon.stop()
         if self._mcp_registry:
@@ -468,7 +470,9 @@ class ElidiaRepl:
 
     def _cmd_new(self) -> bool:
         from elidia.tools.browser import close_browser_session
+        from elidia.tools.database import close_database_session
         asyncio.ensure_future(close_browser_session())
+        close_database_session()
 
         # Compact current session before starting a new one
         if self._compactor and len(self._messages) >= 4:
