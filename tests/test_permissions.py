@@ -61,3 +61,34 @@ class TestNeverPromoteExemption:
     def test_email_send_also_exempted(self):
         assert "email_send" in NEVER_PROMOTE
         assert ACTION_TIERS["email_send"] == PermissionTier.EVERY_TIME
+
+
+class TestFileReadPathClassification:
+    """Regression coverage for the bug found 2026-07-26 live-testing tool
+    calls: file_list (and file_grep/file_glob) default their path argument
+    to "." when the model omits it. classify_action("file_read", path=None)
+    used to fall through to the bare, unmapped "file_read" action, which
+    defaults to EVERY_TIME — so a tool call like file_list({}) got an
+    unexpected permission prompt instead of the AUTO tier every other
+    project-local read gets."""
+
+    def test_missing_path_classifies_as_project_local(self, manager):
+        pm, _ = manager
+        assert pm.classify_action("file_read", path=None) == "file_read_project"
+
+    def test_explicit_dot_classifies_as_project_local(self, manager):
+        pm, _ = manager
+        assert pm.classify_action("file_read", path=".") == "file_read_project"
+
+    def test_missing_path_ends_up_at_auto_tier(self, manager):
+        pm, approvals = manager
+        allowed = pm.check("file_read", session_id="s1", path=None)
+        assert allowed
+        assert approvals["count"] == 0, "AUTO tier should never invoke the prompt function"
+
+    def test_external_path_still_requires_confirmation(self, manager, tmp_dir: Path):
+        pm, approvals = manager
+        pm.set_project_root(tmp_dir)
+        allowed = pm.check("file_read", session_id="s1", path="/etc/passwd")
+        assert allowed  # fixture prompt_fn always approves
+        assert approvals["count"] == 1, "external path must still prompt, not silently AUTO-approve"

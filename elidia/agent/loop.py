@@ -140,17 +140,7 @@ class AgentLoop:
             logger.debug(f"Agent loop iteration {state.loop_count}, model={state.model}")
 
             api_messages = self._build_api_messages(state, user_message=user_text)
-
-            request_payload: dict[str, Any] = {
-                "model": state.model,
-                "messages": api_messages,
-                "stream": False,
-                "temperature": 0.3 if mode == "code" else 0.7,
-            }
-
-            if all_tool_schemas:
-                request_payload["tools"] = all_tool_schemas
-                request_payload["tool_choice"] = "auto"
+            temperature = 0.3 if mode == "code" else 0.7
 
             if self._budget:
                 est_input = sum(len(extract_text(m.content)) // 4 for m in state.messages)
@@ -178,9 +168,9 @@ class AgentLoop:
 
             try:
                 response = await self._client.chat_completion(
-                    messages=state.messages,
+                    messages=api_messages,
                     model=state.model,
-                    temperature=request_payload.get("temperature", 0.7),
+                    temperature=temperature,
                 )
             except RuntimeError as e:
                 yield AgentEvent(kind="error", data=str(e))
@@ -201,7 +191,7 @@ class AgentLoop:
                 "elapsed_ms": response.elapsed_ms,
             })
 
-            tool_calls = self._extract_tool_calls(response.content)
+            tool_calls = self._extract_tool_calls(response.content) if all_tool_schemas else []
 
             if not tool_calls:
                 if response.content:
@@ -269,31 +259,84 @@ class AgentLoop:
             schemas.extend(self._mcp.get_tool_schemas_for_llm())
         return schemas
 
-    def _build_api_messages(self, state: AgentState, user_message: str = "") -> list[dict[str, str]]:
+    def _build_api_messages(self, state: AgentState, user_message: str = "") -> list[ChatMessage]:
+        """Build the full message list actually sent to the model: system
+        prompt (tool schemas, mode guidance, memory/RAG/persona/project-rule
+        context — the "Context Fabric") prepended to the conversation.
+
+        Bug found 2026-07-26: this used to return list[dict], and the two
+        call sites both discarded the result (stuffed it into an unused
+        request_payload dict), then called chat_completion() with
+        state.messages directly instead — which has no system role message
+        at all. The system prompt, including every tool's name/description/
+        parameters and all Context Fabric content, was never sent to the
+        model in the main loop. Returns ChatMessage now — the actual type
+        AiUtilsClient.chat_completion()/chat_completion_stream() accept —
+        so callers can pass this straight through instead of silently
+        dropping it.
+        """
         logger.debug("Entered into _build_api_messages")
         system_prompt = self._get_system_prompt(state.mode, user_message)
-        result: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
-        for msg in state.messages:
-            result.append({"role": msg.role, "content": msg.content})
-        return result
+        return [ChatMessage(role="system", content=system_prompt)] + list(state.messages)
+
+    def _format_tools_for_prompt(self) -> str:
+        """Render full tool schemas (name, description, parameters) as text.
+
+        Bug found 2026-07-26: this previously only listed bare tool names
+        ("Available tools: file_read, file_write, ...") with zero
+        description or parameter info. Verified live: asked the agent to
+        list files via file_list, and instead of emitting a real tool call
+        it fabricated a plausible-looking directory listing — the model had
+        no way to know the tool even took a `path` argument, let alone the
+        exact ```tool JSON shape expected, so it never attempted a real
+        call at all. This codebase's tool-calling mechanism is the ```tool
+        text convention (see _extract_tool_calls), not the vendor APIs'
+        native function-calling — so the model needs the real schema data
+        embedded in the prompt text, which is what this method now does.
+        """
+        schemas = self._build_tool_schemas()
+        if not schemas:
+            return "none"
+
+        lines = []
+        for schema in schemas:
+            fn = schema.get("function", schema)
+            name = fn.get("name", "unknown")
+            description = fn.get("description", "")
+            params = fn.get("parameters", {}) or {}
+            properties = params.get("properties", {}) or {}
+            required = set(params.get("required", []) or [])
+
+            arg_parts = []
+            for arg_name, arg_schema in properties.items():
+                arg_type = arg_schema.get("type", "any")
+                arg_desc = arg_schema.get("description", "")
+                marker = "required" if arg_name in required else "optional"
+                arg_parts.append(f"{arg_name} ({arg_type}, {marker}){': ' + arg_desc if arg_desc else ''}")
+
+            args_text = "; ".join(arg_parts) if arg_parts else "no arguments"
+            lines.append(f"- {name}: {description}\n  Arguments: {args_text}")
+
+        return "\n".join(lines)
 
     def _get_system_prompt(self, mode: str, user_message: str = "") -> str:
         logger.debug(f"Entered into _get_system_prompt: mode={mode}")
 
-        tool_names = [t.name for t in self._tools.list_tools()]
-        if self._mcp:
-            tool_names.extend(t.name for t in self._mcp.list_all_tools())
-
-        tool_list = ", ".join(tool_names) if tool_names else "none"
+        tool_list = self._format_tools_for_prompt()
 
         base = (
             "You are Elidia, an AI coding agent. You help users with software engineering tasks "
             "by reading files, writing code, running commands, and searching the web.\n\n"
-            f"Available tools: {tool_list}\n\n"
-            "To use a tool, respond with a JSON block:\n"
+            f"Available tools:\n{tool_list}\n\n"
+            "To use a tool, respond with a JSON block using the exact argument names listed above:\n"
             "```tool\n"
             '{"name": "tool_name", "arguments": {"arg1": "value1"}}\n'
             "```\n\n"
+            "Never fabricate, simulate, or guess what a tool would return — if a task needs "
+            "real information (files on disk, a web page, a database, an email account, "
+            "a calendar), you MUST emit a real ```tool call and wait for the actual result. "
+            "Do not write comments like '# Simulating the tool call' or present a guessed "
+            "answer as if it were real.\n\n"
             "You can call multiple tools by including multiple ```tool blocks.\n"
             "After tool results are returned, continue reasoning and call more tools or give your final answer.\n"
             "When you have enough information, give your final response directly without tool blocks.\n"
@@ -341,7 +384,7 @@ class AgentLoop:
         # 4. Project rules
         if self._project_path:
             try:
-                from elidia.config.rules import load_project_rules, format_rules_for_system_prompt
+                from elidia.config.rules import format_rules_for_system_prompt, load_project_rules
                 rules = load_project_rules(self._project_path)
                 if rules:
                     context_parts.append(format_rules_for_system_prompt(rules))
@@ -561,7 +604,7 @@ class AgentLoop:
             "reason": "Harness mode — decomposing task into subtasks",
         })
 
-        from elidia.modes.autonomous import AutonomousExecutor, AutonomousState
+        from elidia.modes.autonomous import AutonomousExecutor
 
         executor = AutonomousExecutor(
             client=self._client,
@@ -590,33 +633,31 @@ class AgentLoop:
                 subtask_state.loop_count += 1
                 api_messages = self._build_api_messages(subtask_state, user_message=subtask_text)
 
-                request_payload: dict[str, Any] = {
-                    "model": subtask_state.model,
-                    "messages": api_messages,
-                    "stream": False,
-                    "temperature": 0.3,
-                }
-                if all_tool_schemas:
-                    request_payload["tools"] = all_tool_schemas
-                    request_payload["tool_choice"] = "auto"
-
-                response = await self._client.chat_completion(**request_payload)
+                response = await self._client.chat_completion(
+                    messages=api_messages,
+                    model=subtask_state.model,
+                    temperature=0.3,
+                )
                 content = response.content
-                tool_calls = getattr(response, "tool_calls", None) or []
+                # Text-based ```tool convention (see _extract_tool_calls) — this
+                # codebase does not use native API function-calling; a prior
+                # version of this loop checked response.tool_calls, an attribute
+                # ChatResponse never had, so that branch was permanently dead
+                # and every subtask silently ran with no tool access at all.
+                tool_calls = self._extract_tool_calls(content) if all_tool_schemas else []
 
-                if tool_calls and all_tool_schemas:
+                if tool_calls:
+                    subtask_state.messages.append(ChatMessage(role="assistant", content=content))
                     for tc in tool_calls:
-                        tool_name = tc.get("function", {}).get("name", "") if isinstance(tc, dict) else getattr(tc, "function", {}).get("name", "")
-                        tool_args = tc.get("function", {}).get("arguments", {}) if isinstance(tc, dict) else getattr(tc, "function", {}).get("arguments", {})
-                        if isinstance(tool_args, str):
-                            try:
-                                import json
-                                tool_args = json.loads(tool_args)
-                            except Exception:
-                                tool_args = {}
-                        if tool_name:
-                            result_text, is_error = await self._execute_tool(tool_name, tool_args)
-                            results.append(f"Tool {tool_name}: {result_text[:500]}")
+                        tool_name = tc.get("name", "")
+                        tool_args = tc.get("arguments", {})
+                        if not tool_name:
+                            continue
+                        result_text, is_error = await self._execute_tool(tool_name, tool_args)
+                        results.append(f"Tool {tool_name}: {result_text[:500]}")
+                        subtask_state.messages.append(ChatMessage(
+                            role="user", content=f"[Tool result for {tool_name}]: {result_text}",
+                        ))
                 elif content:
                     results.append(content)
                     break

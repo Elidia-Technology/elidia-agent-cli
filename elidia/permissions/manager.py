@@ -101,8 +101,17 @@ class PermissionManager:
     ) -> str:
         logger.debug(f"Entered into classify_action: action={action}")
 
-        if action == "file_read" and path:
-            return "file_read_project" if self._is_project_path(path) else "file_read_external"
+        if action == "file_read":
+            # A missing path means the tool used its own default — every
+            # file-read tool in this codebase (file_list, file_grep,
+            # file_glob) defaults to "." (current/project directory) when
+            # the model omits the argument, so treat a missing path the
+            # same as an explicit ".": project-local, not the EVERY_TIME
+            # fallback bare "file_read" would otherwise get. Verified live
+            # 2026-07-26: the agent called file_list({}) (no path arg) and
+            # got an unexpected EVERY_TIME permission prompt for what
+            # should have been an ordinary AUTO-tier project read.
+            return "file_read_project" if not path or self._is_project_path(path) else "file_read_external"
 
         if action == "file_write" and path:
             return "file_write_project" if self._is_project_path(path) else "file_write_external"
