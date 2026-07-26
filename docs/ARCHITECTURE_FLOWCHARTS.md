@@ -724,54 +724,67 @@ graph LR
     API_CLIENT --> AUTH_KEY
 ```
 
-## 21. Skill Categories — Coverage Status (2026-07-26 audit)
+## 21. Skill Categories — Coverage Status (2026-07-26 audit → shipped same day)
 
-Audited against 11 requested skill categories. 5 exist today, 6 are gaps.
-Vision (built this session) is the template for how a new skill category
-gets wired in: a `tools/<category>.py` module registering one or more
-`ToolDefinition`s into `ToolRegistry`, permission-gated the same way every
-other tool already is (see §5, Tool Execution Pipeline).
+Audited against 11 requested skill categories on 2026-07-26. Started at 5
+existing + 6 gaps; by end of day all 5 buildable gaps (Browser, Office,
+Database, Email, Calendar) were designed, implemented, tested, and shipped
+— tracked as AIUT-2134 through AIUT-2138. Only API (partial, not
+scheduled) and Desktop (moot — no host app exists) remain open.
 
 ```mermaid
 flowchart TD
-    subgraph EXISTS["Exists today"]
+    subgraph DONE["Shipped 2026-07-26"]
         FS["Filesystem Skills<br/>tools/filesystem.py"]
         TERM["Terminal Skills<br/>tools/terminal.py"]
         CODE["Code Skills<br/>tools/git.py + code mode routing"]
-        VIS["Vision Skills<br/>NEW 2026-07-26 — image upload + multimodal chat"]
-        API_P["API Skills — partial<br/>tools/fetch.py (raw HTTP) + MCP client (generic extensibility)"]
+        VIS["Vision Skills<br/>image upload + multimodal chat"]
+        BROWSER["Browser Skills — AIUT-2134<br/>tools/browser.py — Playwright, session-scoped Chromium"]
+        OFFICE["Office Skills — AIUT-2135<br/>tools/office.py — read reuses rag/ingest.py parsers, write is new"]
+        DB["Database Skills — AIUT-2136<br/>tools/database.py — read-only v1, sqlparse-validated SELECT-only"]
+        EMAIL["Email Skills — AIUT-2137<br/>tools/email.py — SMTP/IMAP, app-password v1"]
+        CAL["Calendar Skills — AIUT-2138<br/>tools/calendar.py — local .ics v1"]
     end
 
-    subgraph MISSING["Gap — no first-party tool"]
-        BROWSER["Browser Skills<br/>no automation — fetch.py is static GET only, no JS/interaction"]
-        OFFICE["Office Skills<br/>no docx/xlsx/pptx read or write"]
-        EMAIL["Email Skills<br/>no SMTP/IMAP/Gmail/Outlook integration"]
-        CAL["Calendar Skills<br/>no Google/Outlook Calendar integration"]
-        DB["Database Skills<br/>db/database.py is CLI's own local sqlite session store only —<br/>no connector for a user's external database"]
-        DESK["Desktop Skills<br/>moot — no Desktop app exists yet (Phase 4, unstarted)"]
+    subgraph OPEN["Still open"]
+        API_P["API Skills — partial, not scheduled<br/>tools/fetch.py (raw HTTP) + MCP client (generic extensibility)"]
+        DESK["Desktop Skills — moot<br/>no Desktop app exists yet (Phase 4, unstarted)"]
     end
 
     TR[ToolRegistry] --> FS
     TR --> TERM
     TR --> CODE
     TR --> VIS
+    TR --> BROWSER
+    TR --> OFFICE
+    TR --> DB
+    TR --> EMAIL
+    TR --> CAL
     TR --> API_P
-    TR -.->|not registered| BROWSER
-    TR -.->|not registered| OFFICE
-    TR -.->|not registered| EMAIL
-    TR -.->|not registered| CAL
-    TR -.->|not registered| DB
+    TR -.->|not registered, no host app| DESK
 
-    style MISSING fill:none,stroke:#a5432c,stroke-dasharray: 4 3
-    style EXISTS fill:none,stroke:#1f7a4c
+    style OPEN fill:none,stroke:#a5432c,stroke-dasharray: 4 3
+    style DONE fill:none,stroke:#1f7a4c
 ```
 
-**Security note on the 3 highest-risk gaps** (Email, Calendar, Database):
-all three need credential/OAuth handling and, for Database in particular,
-arbitrary-query risk against a real production system. Per §12 (Budget
-Governance) and the existing 4-tier permission model (§5), any
-implementation of these must default to the most restrictive tier
-(EVERY_TIME, not AUTO) and — for Database — should ship read-only by
-default with write access a separate, explicitly-granted capability. See
-the master plan (`06_CLI_AND_DESKTOP_MASTER_PLAN.md`, §4.4) for the
-phased build order.
+**How the 3 highest-risk categories (Email, Calendar, Database) actually
+shipped:** Database is read-only in v1 — write/DDL is a separate, later
+capability. Email and Calendar shipped as app-password SMTP/IMAP and
+local `.ics` respectively rather than OAuth2/cloud APIs, since OAuth2
+needs a provider app registration (redirect URIs, consent screen) that's
+infra/account setup outside what a code change alone delivers and can't
+be honestly live-verified without it already existing — both are real,
+immediately usable v1s whose underlying logic carries over unchanged
+once OAuth is layered on top later.
+
+**Permission framework hardening that came out of this:** wiring
+Database's `EVERY_TIME` tier surfaced that `TrustEngine`'s progressive
+trust could still auto-promote an `EVERY_TIME` action to no-prompt after
+enough clean approvals — fine for repeated file deletes in a familiar
+project, wrong for an action where one unnoticed approval hands the
+agent a standing capability with real external consequences. Added
+`NEVER_PROMOTE` (`permissions/manager.py`) — `db_query` and `email_send`
+are now permanently exempt from promotion, proven with a regression test
+showing 25 consecutive approvals still prompt on the 26th call. See the
+master plan (`06_CLI_AND_DESKTOP_MASTER_PLAN.md`, §4.4) for full detail
+and commit references.
