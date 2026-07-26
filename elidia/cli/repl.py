@@ -14,7 +14,7 @@ from rich.text import Text
 
 from elidia.agent.loop import AgentLoop
 from elidia.agent.personas import PersonaEngine
-from elidia.api.client import AiUtilsClient, ChatMessage
+from elidia.api.client import AiUtilsClient, ChatMessage, extract_text
 from elidia.auth.keychain import get_api_key, mask_api_key
 from elidia.cache.lru import ResponseCache
 from elidia.cli.commands import CommandRegistry, build_default_commands
@@ -380,6 +380,8 @@ class ElidiaRepl:
             return self._cmd_cache(arg)
         if cmd == "pager":
             return self._cmd_pager(arg)
+        if cmd == "image":
+            return await self._cmd_image(arg)
         if cmd in ("quit", "exit"):
             raise EOFError()
 
@@ -417,6 +419,30 @@ class ElidiaRepl:
         else:
             current = self._forced_model or "auto"
             self._console.print(f"Current model: [cyan]{current}[/cyan]")
+        return True
+
+    async def _cmd_image(self, arg: str) -> bool:
+        """Usage: /image <path> [message] -- attach an image and ask about it."""
+        logger.debug(f"Entered into _cmd_image: arg={arg}")
+        if not arg:
+            self._console.print("[yellow]Usage: /image <path> [message][/yellow]")
+            return True
+
+        parts = arg.split(maxsplit=1)
+        image_path = parts[0]
+        message = parts[1] if len(parts) > 1 else "What's in this image?"
+
+        try:
+            self._console.print(f"[dim]Uploading {image_path}...[/dim]")
+            url = await self._client.upload_image(image_path)
+        except ValueError as e:
+            self._console.print(f"[red]Could not attach image: {e}[/red]")
+            return True
+        except Exception as e:
+            self._console.print(f"[red]Image upload failed: {e}[/red]")
+            return True
+
+        await self.send_message(message, interactive=True, image_urls=[url])
         return True
 
     def _cmd_mode(self, arg: str) -> bool:
@@ -1035,10 +1061,21 @@ class ElidiaRepl:
         self._console.print(f"Auto-pager: [cyan]{status}[/cyan] (threshold: {self._pager.threshold:.0%})")
         return True
 
-    async def send_message(self, user_input: str, interactive: bool = True) -> None:
-        logger.debug(f"Entered into send_message: msg_len={len(user_input)}, interactive={interactive}")
+    async def send_message(
+        self, user_input: str, interactive: bool = True, image_urls: list[str] | None = None,
+    ) -> None:
+        logger.debug(
+            f"Entered into send_message: msg_len={len(user_input)}, "
+            f"interactive={interactive}, image_count={len(image_urls or [])}"
+        )
 
-        self._messages.append(ChatMessage(role="user", content=user_input))
+        if image_urls:
+            content: str | list[dict] = [{"type": "text", "text": user_input}] + [
+                {"type": "image_url", "image_url": {"url": u}} for u in image_urls
+            ]
+        else:
+            content = user_input
+        self._messages.append(ChatMessage(role="user", content=content))
 
         if self._session_mgr and self._session_id:
             self._session_mgr.add_message(self._session_id, "user", user_input)
@@ -1198,8 +1235,9 @@ class ElidiaRepl:
                     cost_dt=total_cost,
                 )
                 if len(self._messages) == 2:
-                    title = self._messages[0].content[:60]
-                    if len(self._messages[0].content) > 60:
+                    first_text = extract_text(self._messages[0].content)
+                    title = first_text[:60]
+                    if len(first_text) > 60:
                         title += "..."
                     self._session_mgr.update_title(self._session_id, title)
 
@@ -1234,6 +1272,18 @@ class ElidiaRepl:
     async def _send_direct(self, user_input: str, interactive: bool) -> None:
         logger.debug(f"Entered into _send_direct: interactive={interactive}")
         decision = self._router.route(user_input, mode=self._mode)
+
+        # Vision content needs a vision-capable model regardless of what the
+        # classifier would otherwise pick — unless the user explicitly
+        # forced a model with /model, which still wins.
+        last_content = self._messages[-1].content if self._messages else None
+        if isinstance(last_content, list) and not self._forced_model:
+            from elidia.models.router import RouteDecision
+            decision = RouteDecision(
+                model=self._router.get_model_for_type("vision"),
+                reason="Vision content attached",
+                task_type="vision",
+            )
 
         if interactive:
             self._console.print(f"\n[dim]Model: {decision.model} ({decision.reason})[/dim]")

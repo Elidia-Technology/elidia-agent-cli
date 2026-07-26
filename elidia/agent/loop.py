@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from elidia.api.client import AiUtilsClient, ChatMessage
+from elidia.api.client import AiUtilsClient, ChatMessage, extract_text
 from elidia.mcp.registry import MCPRegistry
 from elidia.models.router import ModelRouter
 from elidia.modes.budget import BudgetGovernor
@@ -89,7 +89,12 @@ class AgentLoop:
         state.thinking_level = thinking_level or self._thinking_level
         caps = get_caps(state.thinking_level)
 
-        user_text = messages[-1].content if messages else ""
+        last_content = messages[-1].content if messages else ""
+        has_vision = isinstance(last_content, list)
+        # Classification/routing need plain text; the full multimodal
+        # content (text + image blocks) stays intact in state.messages for
+        # the actual API call.
+        user_text = extract_text(last_content)
 
         try:
             mode_decision = await classify_mode(self._client, user_text)
@@ -103,9 +108,14 @@ class AgentLoop:
             logger.warning(f"Mode classification failed, defaulting to DIRECT: {e}")
             state.exec_mode = ExecMode.DIRECT
 
-        decision = self._router.route(user_text, mode=mode)
-        state.model = forced_model or decision.model
-        yield AgentEvent(kind="thinking", data={"model": state.model, "reason": decision.reason})
+        if has_vision and not forced_model:
+            state.model = self._router.get_model_for_type("vision")
+            decision_reason = "Vision content attached"
+        else:
+            decision = self._router.route(user_text, mode=mode)
+            state.model = forced_model or decision.model
+            decision_reason = decision.reason
+        yield AgentEvent(kind="thinking", data={"model": state.model, "reason": decision_reason})
 
         if state.exec_mode == ExecMode.DEEP:
             async for event in self._run_deep_think(state, user_text, session_id):
@@ -143,7 +153,7 @@ class AgentLoop:
                 request_payload["tool_choice"] = "auto"
 
             if self._budget:
-                est_input = sum(len(m.content) // 4 for m in state.messages)
+                est_input = sum(len(extract_text(m.content)) // 4 for m in state.messages)
                 allowed, cost_est = self._budget.check_and_allow(state.model, est_input)
                 if not allowed:
                     yield AgentEvent(kind="budget_warning", data={

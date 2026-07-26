@@ -53,9 +53,11 @@ class _ElidiaGroup(click.Group):
 @click.option("--version", "-v", is_flag=True, help="Show version")
 @click.option("--file", "-f", "files", multiple=True, type=click.Path(exists=True),
               help="Include file content in context (repeatable)")
+@click.option("--image", "-i", "images", multiple=True, type=click.Path(exists=True),
+              help="Attach an image for vision analysis (repeatable, jpg/png/webp/gif)")
 @click.pass_context
 def cli(ctx: click.Context, model: str | None, mode: str, debug: bool, version: bool,
-        files: tuple[str, ...]) -> None:
+        files: tuple[str, ...], images: tuple[str, ...]) -> None:
     """Elidia Agent CLI — Universal AI Agent for your terminal."""
     _setup_logging(debug)
     logger.debug("Entered into cli")
@@ -69,6 +71,7 @@ def cli(ctx: click.Context, model: str | None, mode: str, debug: bool, version: 
     ctx.obj["mode"] = mode
     ctx.obj["debug"] = debug
     ctx.obj["files"] = files
+    ctx.obj["images"] = images
 
     if ctx.invoked_subcommand is not None:
         return
@@ -76,7 +79,7 @@ def cli(ctx: click.Context, model: str | None, mode: str, debug: bool, version: 
     if not sys.stdin.isatty():
         stdin_content = sys.stdin.read().strip()
         if stdin_content:
-            asyncio.run(_one_shot(stdin_content, model=model, mode=mode, files=files))
+            asyncio.run(_one_shot(stdin_content, model=model, mode=mode, files=files, images=images))
             return
 
     asyncio.run(_start_repl(model=model, mode=mode))
@@ -94,7 +97,8 @@ def _default_message(ctx: click.Context, message: tuple[str, ...]) -> None:
     model = ctx.obj.get("model") if ctx.obj else None
     mode = ctx.obj.get("mode", "chat") if ctx.obj else "chat"
     files = ctx.obj.get("files", ()) if ctx.obj else ()
-    asyncio.run(_one_shot(user_msg, model=model, mode=mode, files=files))
+    images = ctx.obj.get("images", ()) if ctx.obj else ()
+    asyncio.run(_one_shot(user_msg, model=model, mode=mode, files=files, images=images))
 
 
 cli.add_command(_default_message)
@@ -104,16 +108,23 @@ cli.add_command(_default_message)
 @click.argument("message", nargs=-1, required=True)
 @click.option("--model", "-m", default=None, help="Override model selection")
 @click.option("--mode", default=None, type=click.Choice(["chat", "code", "research", "think", "create"]))
+@click.option("--image", "-i", "images", multiple=True, type=click.Path(exists=True),
+              help="Attach an image for vision analysis (repeatable, jpg/png/webp/gif)")
 @click.pass_context
-def ask(ctx: click.Context, message: tuple[str, ...], model: str | None, mode: str | None) -> None:
+def ask(ctx: click.Context, message: tuple[str, ...], model: str | None, mode: str | None,
+        images: tuple[str, ...]) -> None:
     """Send a one-shot message: elidia ask 'your question here'"""
     logger.debug("Entered into ask")
     parent = ctx.parent
     parent_obj = parent.obj if parent and parent.obj else {}
     model = model or parent_obj.get("model")
     mode = mode or parent_obj.get("mode") or "chat"
+    images = images or parent_obj.get("images", ())
     user_msg = " ".join(message)
-    asyncio.run(_one_shot(user_msg, model=model, mode=mode))
+    asyncio.run(_one_shot(user_msg, model=model, mode=mode, images=images))
+
+
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic"}
 
 
 def _build_file_context(files: tuple[str, ...]) -> str:
@@ -125,6 +136,12 @@ def _build_file_context(files: tuple[str, ...]) -> str:
     total = 0
     for path_str in files:
         path = Path(path_str)
+        if path.suffix.lower() in _IMAGE_EXTENSIONS:
+            parts.append(
+                f"[{path.name} is an image — use --image/-i instead of --file/-f "
+                f"to attach it for vision analysis, not raw text decoding]"
+            )
+            continue
         try:
             size = path.stat().st_size
             if size > 1_000_000:
@@ -143,8 +160,10 @@ def _build_file_context(files: tuple[str, ...]) -> str:
 
 
 async def _one_shot(message: str, model: str | None = None, mode: str = "chat",
-                    files: tuple[str, ...] = ()) -> None:
-    logger.debug(f"Entered into _one_shot: msg_len={len(message)}, files={len(files)}")
+                    files: tuple[str, ...] = (), images: tuple[str, ...] = ()) -> None:
+    logger.debug(
+        f"Entered into _one_shot: msg_len={len(message)}, files={len(files)}, images={len(images)}"
+    )
     from elidia.cli.repl import ElidiaRepl
 
     file_ctx = _build_file_context(files)
@@ -152,7 +171,18 @@ async def _one_shot(message: str, model: str | None = None, mode: str = "chat",
 
     repl = ElidiaRepl(forced_model=model, mode=mode)
     await repl.initialize()
-    await repl.send_message(full_message, interactive=False)
+
+    image_urls: list[str] = []
+    for path in images:
+        try:
+            url = await repl._client.upload_image(path)
+            image_urls.append(url)
+        except Exception as e:
+            console.print(f"[red]Could not attach {path}: {e}[/red]")
+            await repl.cleanup()
+            return
+
+    await repl.send_message(full_message, interactive=False, image_urls=image_urls or None)
     await repl.cleanup()
 
 

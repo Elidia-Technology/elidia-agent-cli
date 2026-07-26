@@ -1,9 +1,11 @@
 import asyncio
 import json
 import logging
+import mimetypes
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -11,11 +13,38 @@ from elidia.api.streaming import SSEEvent, parse_sse_stream
 
 logger = logging.getLogger(__name__)
 
+# Images this large or larger get resized server-side on upload, but there's
+# no point sending something absurd over the wire first — same cap as the
+# gateway's MAX_UPLOAD_BYTES (developer/common/media_storage.py).
+MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024
+IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
 
 @dataclass
 class ChatMessage:
     role: str  # "user", "assistant", "system"
-    content: str
+    # str for plain text, or a list of OpenAI-style content blocks for a
+    # multimodal (vision) message — see AiUtilsClient.upload_image().
+    content: str | list[dict]
+
+
+def extract_text(content: str | list[dict]) -> str:
+    """Get the plain-text portion of a message's content.
+
+    Code that needs to reason about the message as text (mode classification,
+    routing, token-count estimation, session titles, caching keys) can't
+    operate on a list of multimodal content blocks — this pulls out just the
+    text block(s), joined, ignoring any image_url blocks. Plain string
+    content passes through unchanged.
+    """
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+    return " ".join(
+        block.get("text", "") for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
 
 
 @dataclass
@@ -72,6 +101,54 @@ class AiUtilsClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+
+    async def upload_image(self, file_path: str | Path) -> str:
+        """Upload a local image to the gateway for use as vision input.
+
+        Server-side resizes if needed. Returns the resulting CDN URL to
+        reference in a message's content as an image_url block.
+
+        Raises:
+            ValueError: unreadable file, unsupported type, or too large.
+            httpx.HTTPStatusError: upload rejected by the gateway.
+        """
+        path = Path(file_path)
+        logger.debug(f"Entered into upload_image: path={path}")
+        if not path.is_file():
+            raise ValueError(f"Not a file: {path}")
+
+        content_type, _ = mimetypes.guess_type(str(path))
+        if content_type not in IMAGE_MIME_TYPES:
+            raise ValueError(
+                f"Unsupported image type '{content_type}' for {path.name}. "
+                f"Supported: {', '.join(sorted(IMAGE_MIME_TYPES))}"
+            )
+
+        size = path.stat().st_size
+        if size > MAX_IMAGE_UPLOAD_BYTES:
+            raise ValueError(f"Image too large: {size} bytes (max {MAX_IMAGE_UPLOAD_BYTES})")
+
+        data = path.read_bytes()
+        # Deliberately NOT using the shared client here: it carries a default
+        # Content-Type: application/json header (for the JSON chat
+        # endpoints), and httpx merges rather than replaces client-level
+        # headers on a per-request basis — passing `files=` does not make it
+        # drop that default, so form parsing on the server breaks. A
+        # dedicated client with only auth headers lets httpx compute the
+        # correct multipart/form-data boundary itself.
+        async with httpx.AsyncClient(
+            base_url=self._base_url,
+            headers={"Authorization": f"Bearer {self._api_key}", "User-Agent": "elidia-cli/0.1.0"},
+            timeout=self._timeout,
+        ) as upload_client:
+            resp = await upload_client.post(
+                "/files",
+                files={"file": (path.name, data, content_type)},
+            )
+        resp.raise_for_status()
+        result = resp.json()
+        logger.info(f"Image uploaded: {path.name} -> {result.get('url')} ({result.get('dt_consumed', 0)} DT)")
+        return result["url"]
 
     async def chat_completion_stream(
         self,

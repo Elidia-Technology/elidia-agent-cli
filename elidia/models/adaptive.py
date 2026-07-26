@@ -51,3 +51,7 @@ class AdaptiveRouter:
     def force_model(self, model: str | None) -> None:
         logger.debug(f"Entered into force_model: model={model}")
         self._base.force_model(model)
+
+    def get_model_for_type(self, task_type: str) -> str:
+        logger.debug(f"Entered into get_model_for_type: task_type={task_type}")
+        return self._base.get_model_for_type(task_type)
