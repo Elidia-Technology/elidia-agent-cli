@@ -87,6 +87,21 @@ def parse_workflow(source: str | Path) -> Workflow:
     )
 
 
+def workflow_requires_llm(workflow: Workflow) -> bool:
+    """True if any step (recursively, including inside parallel/loop) is an 'llm' step."""
+    logger.debug(f"Entered into workflow_requires_llm: name={workflow.name}")
+
+    def _any_llm(steps: list[WorkflowStep]) -> bool:
+        for step in steps:
+            if step.type == "llm":
+                return True
+            if step.steps and _any_llm(step.steps):
+                return True
+        return False
+
+    return _any_llm(workflow.steps)
+
+
 def _parse_steps(raw_steps: list[dict[str, Any]]) -> list[WorkflowStep]:
     logger.debug(f"Entered into _parse_steps: count={len(raw_steps)}")
     steps: list[WorkflowStep] = []

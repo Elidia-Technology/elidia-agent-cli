@@ -300,14 +300,17 @@ def auth_email_login() -> None:
         "[dim]Use an app password, not your real account password — "
         "Gmail/Outlook/etc. all support generating one for exactly this.[/dim]"
     )
-    address = click.prompt("Email address")
-    password = click.prompt("App password", hide_input=True)
+    address = click.prompt("Email address (SMTP/IMAP login)")
+    password = click.prompt("App password / API key", hide_input=True)
     smtp_host = click.prompt("SMTP host", default=f"smtp.{address.split('@')[-1]}")
     smtp_port = click.prompt("SMTP port", default=587, type=int)
     imap_host = click.prompt("IMAP host", default=f"imap.{address.split('@')[-1]}")
     imap_port = click.prompt("IMAP port", default=993, type=int)
+    from_address = click.prompt(
+        "From address shown to recipients", default=address,
+    )
 
-    store_email_credentials(address, password, smtp_host, smtp_port, imap_host, imap_port)
+    store_email_credentials(address, password, smtp_host, smtp_port, imap_host, imap_port, from_address)
     console.print(f"[green]v[/green] Email account configured: {address}")
 
 
@@ -593,7 +596,7 @@ def workflow() -> None:
 def workflow_run(path: str) -> None:
     """Execute a workflow YAML file."""
     logger.debug(f"Entered into workflow_run: path={path}")
-    from elidia.workflow.engine import WorkflowExecutor, parse_workflow
+    from elidia.workflow.engine import WorkflowExecutor, parse_workflow, workflow_requires_llm
 
     try:
         wf = parse_workflow(Path(path))
@@ -606,13 +609,16 @@ def workflow_run(path: str) -> None:
         from elidia.auth.keychain import get_api_key
         from elidia.config.settings import load_config
 
-        api_key = get_api_key()
-        if not api_key:
-            console.print("[red]No API key configured. Run: elidia auth login[/red]")
-            raise SystemExit(1)
+        client = None
+        if workflow_requires_llm(wf):
+            api_key = get_api_key()
+            if not api_key:
+                console.print("[red]No API key configured. Run: elidia auth login[/red]")
+                console.print("[dim]This workflow has at least one 'llm' step, which needs an API key.[/dim]")
+                raise SystemExit(1)
+            config = load_config()
+            client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
 
-        config = load_config()
-        client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
         executor = WorkflowExecutor(client=client)
 
         console.print(f"[cyan]Running workflow:[/cyan] {wf.name}")
@@ -633,6 +639,7 @@ def workflow_run(path: str) -> None:
                         f"{event.data.get('total_steps', 0)} steps ({event.data.get('elapsed_ms', 0)}ms)"
                     )
         finally:
-            await client.close()
+            if client is not None:
+                await client.close()
 
     asyncio.run(_run())

@@ -9,7 +9,46 @@ from elidia.workflow.engine import (
     _evaluate_condition,
     _render_template,
     parse_workflow,
+    workflow_requires_llm,
 )
+
+
+class TestWorkflowRequiresLlm:
+    """CLI's `elidia workflow run` must not demand an API key for workflows
+    with no 'llm' step — see AIUT ticket for the shell-only-workflow bug."""
+
+    def test_shell_only_workflow_does_not_require_llm(self):
+        wf = parse_workflow("name: t\nsteps:\n  - name: s1\n    type: shell\n    command: echo hi")
+        assert workflow_requires_llm(wf) is False
+
+    def test_tool_only_workflow_does_not_require_llm(self):
+        wf = parse_workflow("name: t\nsteps:\n  - name: s1\n    type: tool\n    tool: file_read")
+        assert workflow_requires_llm(wf) is False
+
+    def test_llm_step_requires_llm(self):
+        wf = parse_workflow("name: t\nsteps:\n  - name: s1\n    type: llm\n    prompt: hi")
+        assert workflow_requires_llm(wf) is True
+
+    def test_llm_step_nested_in_parallel_requires_llm(self):
+        yaml_text = """
+name: t
+steps:
+  - name: p1
+    type: parallel
+    steps:
+      - name: shell1
+        type: shell
+        command: echo hi
+      - name: llm1
+        type: llm
+        prompt: hi
+"""
+        wf = parse_workflow(yaml_text)
+        assert workflow_requires_llm(wf) is True
+
+    def test_empty_workflow_does_not_require_llm(self):
+        wf = parse_workflow("name: t\nsteps: []")
+        assert workflow_requires_llm(wf) is False
 
 
 class TestParseWorkflow:
