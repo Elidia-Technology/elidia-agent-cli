@@ -372,6 +372,14 @@ class RagEngine:
         self._conn.commit()
         return cursor.rowcount
 
+    def clear_all(self) -> int:
+        """Delete every ingested chunk. Returns the number of chunks removed."""
+        logger.debug("Entered into clear_all")
+        self._conn.execute("DELETE FROM rag_vecs")
+        cursor = self._conn.execute("DELETE FROM rag_docs")
+        self._conn.commit()
+        return cursor.rowcount
+
     def count_documents(self, project_path: str = "") -> dict[str, int]:
         logger.debug(f"Entered into count_documents: project_path={project_path}")
         if project_path:
@@ -405,23 +413,28 @@ class RagEngine:
 def _build_fts_query(query: str) -> str:
     """Convert a natural-language query into an FTS5-safe MATCH expression.
 
-    Escapes special characters, splits into terms, and ANDs them together
-    for precision. Short-circuits for single-term or empty queries.
+    Wraps every term in double quotes and ANDs them together for precision.
+    Quoting (not character-escaping) is what actually makes this FTS5-safe:
+    FTS5's query grammar treats characters like '-' and ':' as syntax
+    (NOT / column-filter) even *inside* an otherwise-plain bareword — e.g.
+    the unquoted term `on-call*` fails with "no such column: call" because
+    the hyphen splits it mid-parse. A quoted phrase like `"on-call"*` is
+    parsed as a literal string instead, sidestepping that class of bug
+    entirely rather than trying to enumerate every special character.
+    A literal `"` inside a term is doubled per FTS5's own quoting rule.
+    Short-circuits for single-term or empty queries.
     """
     logger.debug(f"Entered into _build_fts_query: query={query!r}")
-    # FTS5 special characters that need escaping
-    special = set('"*()[]{}^~?:\\')
     terms: list[str] = []
     for raw in query.split():
         word = raw.strip().lower()
         if not word:
             continue
-        # Escape special chars
-        clean = "".join(f"\\{c}" if c in special else c for c in word)
-        if len(clean) <= 2:
-            terms.append(clean)
+        escaped = word.replace('"', '""')
+        if len(word) <= 2:
+            terms.append(f'"{escaped}"')
         else:
-            terms.append(f"{clean}*")
+            terms.append(f'"{escaped}"*')
     if not terms:
         return query.strip().lower()
     if len(terms) == 1:

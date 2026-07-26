@@ -35,6 +35,27 @@ def chunk_text(
     return _chunk_by_paragraphs(text, chunk_size, overlap, source, content_type)
 
 
+def _split_oversized(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Split a single block of text larger than chunk_size into fixed-size,
+    overlapping pieces. Used when a paragraph/section has no blank-line (or
+    heading) boundary to split on and exceeds chunk_size on its own — e.g.
+    a file with no blank lines anywhere used to become ONE chunk containing
+    the entire document, regardless of size (a real bug: a 21KB single-block
+    file produced 1 chunk instead of ~40, diluting the embedding enough that
+    a fact in the middle of the file became unfindable by search)."""
+    if len(text) <= chunk_size:
+        return [text]
+    pieces: list[str] = []
+    step = max(1, chunk_size - overlap)
+    start = 0
+    while start < len(text):
+        pieces.append(text[start:start + chunk_size])
+        if start + chunk_size >= len(text):
+            break
+        start += step
+    return pieces
+
+
 def _chunk_by_paragraphs(
     text: str,
     chunk_size: int,
@@ -48,6 +69,18 @@ def _chunk_by_paragraphs(
     current_start = 0
     line_offset = 0
 
+    def flush(end_line: int) -> None:
+        nonlocal current
+        if current:
+            chunks.append((current, ChunkMetadata(
+                source=source,
+                chunk_index=len(chunks),
+                start_line=current_start,
+                end_line=end_line,
+                content_type=content_type,
+            )))
+            current = ""
+
     for para in paragraphs:
         para = para.strip()
         if not para:
@@ -56,34 +89,31 @@ def _chunk_by_paragraphs(
 
         para_lines = para.count("\n") + 1
 
-        if len(current) + len(para) + 2 <= chunk_size:
+        if len(para) > chunk_size:
+            flush(line_offset - 1)
+            for piece in _split_oversized(para, chunk_size, overlap):
+                chunks.append((piece, ChunkMetadata(
+                    source=source,
+                    chunk_index=len(chunks),
+                    start_line=line_offset,
+                    end_line=line_offset + para_lines - 1,
+                    content_type=content_type,
+                )))
+            current_start = line_offset + para_lines
+        elif len(current) + len(para) + 2 <= chunk_size:
             if current:
                 current += "\n\n" + para
             else:
                 current = para
                 current_start = line_offset
         else:
-            if current:
-                chunks.append((current, ChunkMetadata(
-                    source=source,
-                    chunk_index=len(chunks),
-                    start_line=current_start,
-                    end_line=line_offset - 1,
-                    content_type=content_type,
-                )))
+            flush(line_offset - 1)
             current = para
             current_start = line_offset
 
         line_offset += para_lines + 1
 
-    if current:
-        chunks.append((current, ChunkMetadata(
-            source=source,
-            chunk_index=len(chunks),
-            start_line=current_start,
-            end_line=line_offset,
-            content_type=content_type,
-        )))
+    flush(line_offset)
 
     for c in chunks:
         c[1].total_chunks = len(chunks)
@@ -97,7 +127,19 @@ def _chunk_code(
     overlap: int,
     source: str,
 ) -> list[tuple[str, ChunkMetadata]]:
-    lines = text.split("\n")
+    raw_lines = text.split("\n")
+    # A single line longer than chunk_size (minified/generated code, a long
+    # data literal) has no line boundary to split on — expand it into
+    # fixed-size pieces up front so the boundary logic below still caps
+    # chunk size correctly (same bug class as the paragraph/markdown
+    # chunkers: without this, one long line becomes one oversized chunk).
+    lines: list[str] = []
+    for line in raw_lines:
+        if len(line) > chunk_size:
+            lines.extend(_split_oversized(line, chunk_size, overlap))
+        else:
+            lines.append(line)
+
     chunks: list[tuple[str, ChunkMetadata]] = []
     current_lines: list[str] = []
     current_len = 0
@@ -162,39 +204,53 @@ def _chunk_markdown(
     current_start = 0
     line_offset = 0
 
+    def flush(end_line: int) -> None:
+        nonlocal current
+        if current:
+            chunks.append((current, ChunkMetadata(
+                source=source,
+                chunk_index=len(chunks),
+                start_line=current_start,
+                end_line=end_line,
+                content_type="markdown",
+            )))
+            current = ""
+
     for section in sections:
         section = section.strip()
         if not section:
             continue
 
-        if len(current) + len(section) + 2 <= chunk_size:
+        section_lines = section.count("\n") + 1
+
+        if len(section) > chunk_size:
+            # A single section (e.g. one long paragraph under a heading,
+            # with no sub-headings) larger than chunk_size — split it
+            # rather than emit it whole (same bug class as _chunk_by_paragraphs).
+            flush(line_offset)
+            for piece in _split_oversized(section, chunk_size, overlap):
+                chunks.append((piece, ChunkMetadata(
+                    source=source,
+                    chunk_index=len(chunks),
+                    start_line=line_offset,
+                    end_line=line_offset + section_lines,
+                    content_type="markdown",
+                )))
+            current_start = line_offset + section_lines
+        elif len(current) + len(section) + 2 <= chunk_size:
             if current:
                 current += "\n\n" + section
             else:
                 current = section
                 current_start = line_offset
         else:
-            if current:
-                chunks.append((current, ChunkMetadata(
-                    source=source,
-                    chunk_index=len(chunks),
-                    start_line=current_start,
-                    end_line=line_offset,
-                    content_type="markdown",
-                )))
+            flush(line_offset)
             current = section
             current_start = line_offset
 
-        line_offset += section.count("\n") + 1
+        line_offset += section_lines
 
-    if current:
-        chunks.append((current, ChunkMetadata(
-            source=source,
-            chunk_index=len(chunks),
-            start_line=current_start,
-            end_line=line_offset,
-            content_type="markdown",
-        )))
+    flush(line_offset)
 
     for c in chunks:
         c[1].total_chunks = len(chunks)
