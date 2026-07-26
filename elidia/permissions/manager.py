@@ -30,6 +30,7 @@ ACTION_TIERS: dict[str, PermissionTier] = {
     "clipboard_read": PermissionTier.AUTO,
     "mcp_call_auto": PermissionTier.AUTO,
     "browser_read": PermissionTier.AUTO,
+    "rag_search": PermissionTier.AUTO,
 
     "file_write_project": PermissionTier.SESSION,
     "command_exec": PermissionTier.SESSION,

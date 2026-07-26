@@ -150,10 +150,11 @@ class TestFindConflicts:
 
 
 class TestFileContextRouting:
-    def test_build_file_context_formats_ics_readably(self, tmp_dir: Path):
+    @pytest.mark.asyncio
+    async def test_build_file_context_formats_ics_readably(self, tmp_dir: Path):
         from elidia.cli.main import _build_file_context
 
         path = _make_ics(tmp_dir, [("Board meeting", "2026-08-01T09:00:00", "2026-08-01T10:00:00")])
-        ctx = _build_file_context((str(path),))
+        ctx = await _build_file_context((str(path),))
         assert "Board meeting" in ctx
         assert "BEGIN:VEVENT" not in ctx  # readable summary, not raw markup

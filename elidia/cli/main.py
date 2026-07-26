@@ -110,9 +110,11 @@ cli.add_command(_default_message)
 @click.option("--mode", default=None, type=click.Choice(["chat", "code", "research", "think", "create"]))
 @click.option("--image", "-i", "images", multiple=True, type=click.Path(exists=True),
               help="Attach an image for vision analysis (repeatable, jpg/png/webp/gif)")
+@click.option("--file", "-f", "files", multiple=True, type=click.Path(exists=True),
+              help="Include file content in context (repeatable)")
 @click.pass_context
 def ask(ctx: click.Context, message: tuple[str, ...], model: str | None, mode: str | None,
-        images: tuple[str, ...]) -> None:
+        images: tuple[str, ...], files: tuple[str, ...]) -> None:
     """Send a one-shot message: elidia ask 'your question here'"""
     logger.debug("Entered into ask")
     parent = ctx.parent
@@ -120,8 +122,9 @@ def ask(ctx: click.Context, message: tuple[str, ...], model: str | None, mode: s
     model = model or parent_obj.get("model")
     mode = mode or parent_obj.get("mode") or "chat"
     images = images or parent_obj.get("images", ())
+    files = files or parent_obj.get("files", ())
     user_msg = " ".join(message)
-    asyncio.run(_one_shot(user_msg, model=model, mode=mode, images=images))
+    asyncio.run(_one_shot(user_msg, model=model, mode=mode, images=images, files=files))
 
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic"}
@@ -153,8 +156,47 @@ def _summarize_ics(path: Path) -> str:
     return "\n".join(lines) if lines else "[No events in this calendar]"
 
 
-def _build_file_context(files: tuple[str, ...]) -> str:
-    """Read file contents and build a context prefix for the message."""
+_AUTO_INGEST_THRESHOLD = 8_000  # chars — beyond this, index into RAG + preview instead of blind truncation
+
+
+async def _auto_ingest_file(path: Path, content: str) -> bool:
+    """Best-effort: index a large file into the local RAG store so it's
+    retrievable via rag_search instead of being silently truncated.
+    Returns False (never raises) if no API key is configured or ingestion
+    fails for any reason — callers fall back to plain truncation."""
+    logger.debug(f"Entered into _auto_ingest_file: path={path}")
+    from elidia.auth.keychain import get_api_key
+
+    api_key = get_api_key()
+    if not api_key:
+        return False
+
+    try:
+        import hashlib
+
+        from elidia.memory.embeddings import EmbeddingClient
+        from elidia.rag.engine import RagEngine
+
+        engine = RagEngine(EmbeddingClient(api_key=api_key))
+        engine.open()
+        try:
+            file_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+            await engine.ingest(text=content, source=str(path.resolve()), file_hash=file_hash)
+        finally:
+            engine.close()
+        return True
+    except Exception as e:
+        logger.warning(f"Entered into _auto_ingest_file: auto-ingest failed for {path}: {e}")
+        return False
+
+
+async def _build_file_context(files: tuple[str, ...]) -> str:
+    """Read file contents and build a context prefix for the message.
+
+    Files larger than _AUTO_INGEST_THRESHOLD are indexed into the local
+    RAG store (auto-ingest) instead of being blindly truncated — the
+    message gets a preview plus a pointer to rag_search for the rest.
+    """
     if not files:
         return ""
     parts: list[str] = []
@@ -171,7 +213,14 @@ def _build_file_context(files: tuple[str, ...]) -> str:
         try:
             size = path.stat().st_size
             if size > 1_000_000:
-                parts.append(f"[File too large to include: {path.name} ({size} bytes)]")
+                ingested = await _auto_ingest_file(path, path.read_text(encoding="utf-8", errors="replace"))
+                if ingested:
+                    parts.append(
+                        f"[{path.name} ({size} bytes) is too large to inline but has been indexed "
+                        f"into the local RAG store — use rag_search to find relevant sections]"
+                    )
+                else:
+                    parts.append(f"[File too large to include: {path.name} ({size} bytes)]")
                 continue
             suffix = path.suffix.lower()
             if suffix in _OFFICE_PARSERS:
@@ -182,6 +231,15 @@ def _build_file_context(files: tuple[str, ...]) -> str:
                 content = _summarize_ics(path)
             else:
                 content = path.read_text(encoding="utf-8", errors="replace")
+
+            if len(content) > _AUTO_INGEST_THRESHOLD:
+                ingested = await _auto_ingest_file(path, content)
+                if ingested:
+                    preview = content[:_AUTO_INGEST_THRESHOLD] + "\n... (truncated — indexed into RAG, use rag_search for the rest)"
+                    parts.append(f"--- {path.name} (preview, {len(content)} chars total, indexed into RAG) ---\n{preview}\n--- end {path.name} preview ---")
+                    total += _AUTO_INGEST_THRESHOLD
+                    continue
+
             if total + len(content) > max_total:
                 content = content[:max_total - total] + "\n... (truncated)"
             parts.append(f"--- {path.name} ---\n{content}\n--- end {path.name} ---")
@@ -200,7 +258,7 @@ async def _one_shot(message: str, model: str | None = None, mode: str = "chat",
     )
     from elidia.cli.repl import ElidiaRepl
 
-    file_ctx = _build_file_context(files)
+    file_ctx = await _build_file_context(files)
     full_message = f"{file_ctx}{message}" if file_ctx else message
 
     repl = ElidiaRepl(forced_model=model, mode=mode)
@@ -641,5 +699,137 @@ def workflow_run(path: str) -> None:
         finally:
             if client is not None:
                 await client.close()
+
+    asyncio.run(_run())
+
+
+# --- RAG subcommands ---
+
+
+async def _open_rag_engine():
+    """Shared setup for the rag CLI subcommands: real API key required
+    (embeddings go through the AiUtils API), console error + SystemExit(1)
+    if missing so every subcommand fails the same clear way."""
+    from elidia.auth.keychain import get_api_key
+    from elidia.memory.embeddings import EmbeddingClient
+    from elidia.rag.engine import RagEngine
+
+    api_key = get_api_key()
+    if not api_key:
+        console.print("[red]No API key configured. Run: elidia auth login[/red]")
+        console.print("[dim]RAG ingestion/search needs it for embeddings.[/dim]")
+        raise SystemExit(1)
+
+    engine = RagEngine(EmbeddingClient(api_key=api_key))
+    engine.open()
+    return engine
+
+
+@cli.group()
+def rag() -> None:
+    """Manage the local RAG (retrieval-augmented search) store."""
+
+
+@rag.command("ingest")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--recursive/--no-recursive", default=True, help="Recurse into subdirectories (directories only)")
+def rag_ingest(path: str, recursive: bool) -> None:
+    """Ingest a file or directory into the local RAG store for later rag_search."""
+    logger.debug(f"Entered into rag_ingest: path={path}, recursive={recursive}")
+    from elidia.rag.ingest import FileIngestPipeline
+
+    target = Path(path)
+
+    async def _run() -> None:
+        engine = await _open_rag_engine()
+        pipeline = FileIngestPipeline(engine)
+        try:
+            if target.is_dir():
+                console.print(f"[cyan]Ingesting directory:[/cyan] {target}")
+                result = await pipeline.ingest_directory(target, recursive=recursive)
+                console.print(
+                    f"[green]v[/green] Ingested {result['files']} file(s), "
+                    f"{result['chunks']} chunk(s), skipped {result['skipped']}"
+                )
+            else:
+                console.print(f"[cyan]Ingesting file:[/cyan] {target}")
+                ids = await pipeline.ingest_file(target)
+                if ids:
+                    console.print(f"[green]v[/green] Ingested {len(ids)} chunk(s) from {target.name}")
+                else:
+                    console.print(
+                        f"[yellow]Nothing ingested from {target.name}[/yellow] "
+                        "(unsupported type, empty, too large, or already ingested — same content hash)"
+                    )
+        finally:
+            engine.close()
+
+    asyncio.run(_run())
+
+
+@rag.command("search")
+@click.argument("query")
+@click.option("--limit", default=5, type=int, help="Max results")
+def rag_search_cmd(query: str, limit: int) -> None:
+    """Search the local RAG store."""
+    logger.debug(f"Entered into rag_search_cmd: query={query!r}, limit={limit}")
+
+    async def _run() -> None:
+        engine = await _open_rag_engine()
+        try:
+            results = await engine.search(query, limit=limit)
+            if not results:
+                console.print("[yellow]No matching content found.[/yellow]")
+                return
+            for r in results:
+                doc = r.document
+                console.print(
+                    f"\n[cyan]{doc.source}[/cyan] "
+                    f"[dim](chunk {doc.chunk_index + 1}/{doc.total_chunks}, score={r.score:.3f})[/dim]"
+                )
+                console.print(doc.content[:500] + ("..." if len(doc.content) > 500 else ""))
+        finally:
+            engine.close()
+
+    asyncio.run(_run())
+
+
+@rag.command("list")
+def rag_list() -> None:
+    """Show how much content is currently ingested."""
+    logger.debug("Entered into rag_list")
+
+    async def _run() -> None:
+        engine = await _open_rag_engine()
+        try:
+            counts = engine.count_documents()
+            if counts["sources"] == 0:
+                console.print("[yellow]Nothing has been ingested yet.[/yellow] Run: elidia rag ingest <path>")
+            else:
+                console.print(f"{counts['sources']} source(s), {counts['chunks']} chunk(s) ingested.")
+        finally:
+            engine.close()
+
+    asyncio.run(_run())
+
+
+@rag.command("clear")
+@click.option("--source", default=None, help="Only clear entries from this source path (default: clear everything)")
+@click.confirmation_option(prompt="This permanently deletes ingested RAG data. Continue?")
+def rag_clear(source: str | None) -> None:
+    """Delete ingested content from the local RAG store."""
+    logger.debug(f"Entered into rag_clear: source={source}")
+
+    async def _run() -> None:
+        engine = await _open_rag_engine()
+        try:
+            if source:
+                n = engine.delete_source(source)
+                console.print(f"[green]v[/green] Deleted {n} chunk(s) from {source}")
+            else:
+                n = engine.clear_all()
+                console.print(f"[green]v[/green] Deleted {n} chunk(s) — RAG store is now empty")
+        finally:
+            engine.close()
 
     asyncio.run(_run())

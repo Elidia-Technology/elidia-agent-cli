@@ -788,3 +788,43 @@ are now permanently exempt from promotion, proven with a regression test
 showing 25 consecutive approvals still prompt on the 26th call. See the
 master plan (`06_CLI_AND_DESKTOP_MASTER_PLAN.md`, §4.4) for full detail
 and commit references.
+
+## 22. RAG Subsystem — Reconnected (2026-07-27, AIUT-2141)
+
+`RagEngine`/`FileIngestPipeline` existed (~1,135 LOC) but were never
+called from any user-facing surface — confirmed via `grep -rn
+"FileIngestPipeline(\|RagEngine(" elidia/` returning zero hits outside
+`elidia/rag/` itself. Wired up per the requested design (all three, not
+one-or-the-other): `elidia rag ingest/search/list/clear` (CLI), `/rag
+...` (REPL), and auto-ingest for files over ~8,000 chars passed via
+`-f/--file` (preview + index instead of blind truncation, including the
+>1MB case that previously just dropped the file). The read side is a new
+`rag_search` tool (AUTO tier, agent-invocable) — ingestion stays a
+deliberate user action across all three entry points, never
+agent-triggered, so an embedding-cost operation can't fire mid-conversation
+without the user asking for it.
+
+Live end-to-end verification surfaced and fixed three further real bugs
+along the way, not just wiring:
+
+1. **FTS5 query builder crashed on hyphenated terms** — `_build_fts_query`
+   escaped special characters individually but not `-`, and FTS5's query
+   grammar treats an in-word hyphen as syntax (`on-call*` → `no such
+   column: call`), not just a tokenizer boundary. Fixed by quoting every
+   term (`"on-call"*`) instead of trying to enumerate escapable characters.
+2. **Chunker never split an oversized paragraph/section/line** — a 21KB
+   file with no blank lines produced *one* chunk containing the entire
+   file instead of ~40, diluting the embedding enough that a fact in the
+   middle became unfindable by search. Fixed for all three content types
+   (`text`, `markdown`, `code`) via a shared `_split_oversized` helper.
+3. **`elidia ask` silently dropped `-f/--file`** — the subcommand never
+   declared its own `--file` option and never read the parent group's
+   either, so both `elidia ask -f x.txt "..."` and `elidia --file x.txt
+   ask "..."` reached the model with nothing attached. Fixed by mirroring
+   how `-i/--image` already worked (own option + parent fallback).
+
+34 new tests added across `test_rag_tool.py` and `test_chunker.py`
+(chunker fix verified with a real FTS5 in-memory table, not just string
+inspection). Full live proof, not just unit tests: real `elidia rag
+ingest` → real `elidia ask` with the agent autonomously calling
+`rag_search` → correct grounded answer citing the ingested content.

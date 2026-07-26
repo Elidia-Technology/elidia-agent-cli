@@ -102,7 +102,8 @@ class TestPptxRead:
 
 
 class TestFileContextRouting:
-    def test_build_file_context_routes_docx_through_parser(self, tmp_dir: Path):
+    @pytest.mark.asyncio
+    async def test_build_file_context_routes_docx_through_parser(self, tmp_dir: Path):
         from elidia.cli.main import _build_file_context
 
         from docx import Document
@@ -111,6 +112,6 @@ class TestFileContextRouting:
         path = tmp_dir / "sample.docx"
         doc.save(str(path))
 
-        ctx = _build_file_context((str(path),))
+        ctx = await _build_file_context((str(path),))
         assert "Extracted via ingest parser." in ctx
         assert "PK" not in ctx  # not the raw zip bytes leaking through as garbled text

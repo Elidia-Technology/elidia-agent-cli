@@ -118,5 +118,10 @@ def build_default_commands() -> CommandRegistry:
         name="rules", description="Show project rules (.elidia/rules.md)",
         usage="/rules", category="general",
     ))
+    registry.register(SlashCommand(
+        name="rag", description="Ingest files or search the local RAG store",
+        usage="/rag [ingest <path>|search <query>|list|clear]",
+        category="tools",
+    ))
 
     return registry

@@ -242,8 +242,10 @@ class ElidiaRepl:
         logger.debug("Entered into cleanup")
         from elidia.tools.browser import close_browser_session
         from elidia.tools.database import close_database_session
+        from elidia.tools.rag import close_rag_session
         await close_browser_session()
         close_database_session()
+        close_rag_session()
         if self._daemon:
             await self._daemon.stop()
         if self._mcp_registry:
@@ -386,6 +388,8 @@ class ElidiaRepl:
             return self._cmd_pager(arg)
         if cmd == "image":
             return await self._cmd_image(arg)
+        if cmd == "rag":
+            return await self._cmd_rag(arg)
         if cmd in ("quit", "exit"):
             raise EOFError()
 
@@ -471,8 +475,10 @@ class ElidiaRepl:
     def _cmd_new(self) -> bool:
         from elidia.tools.browser import close_browser_session
         from elidia.tools.database import close_database_session
+        from elidia.tools.rag import close_rag_session
         asyncio.ensure_future(close_browser_session())
         close_database_session()
+        close_rag_session()
 
         # Compact current session before starting a new one
         if self._compactor and len(self._messages) >= 4:
@@ -932,6 +938,69 @@ class ElidiaRepl:
         except Exception as e:
             self._console.print(f"[red]Workflow error: {e}[/red]")
 
+        return True
+
+    async def _cmd_rag(self, arg: str) -> bool:
+        logger.debug(f"Entered into _cmd_rag: arg={arg}")
+        from elidia.tools.rag import _get_session
+
+        parts = arg.split(maxsplit=1)
+        action = parts[0] if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+
+        if action == "ingest" and rest:
+            from pathlib import Path as _Path
+
+            from elidia.rag.ingest import FileIngestPipeline
+            from elidia.tools.rag import _ensure_engine
+
+            target = _Path(rest).expanduser()
+            if not target.exists():
+                self._console.print(f"[red]Path not found: {rest}[/red]")
+                return True
+            try:
+                engine = await _ensure_engine()
+            except RuntimeError as e:
+                self._console.print(f"[red]{e}[/red]")
+                return True
+            pipeline = FileIngestPipeline(engine)
+            if target.is_dir():
+                self._console.print(f"[cyan]Ingesting directory:[/cyan] {target}")
+                result = await pipeline.ingest_directory(target)
+                self._console.print(
+                    f"[green]v[/green] Ingested {result['files']} file(s), "
+                    f"{result['chunks']} chunk(s), skipped {result['skipped']}"
+                )
+            else:
+                ids = await pipeline.ingest_file(target)
+                if ids:
+                    self._console.print(f"[green]v[/green] Ingested {len(ids)} chunk(s) from {target.name}")
+                else:
+                    self._console.print(f"[yellow]Nothing ingested from {target.name}[/yellow]")
+            return True
+
+        if action == "search" and rest:
+            from elidia.tools.rag import _rag_search
+            result = await _rag_search(rest, limit=5)
+            self._console.print(result.content)
+            return True
+
+        if action == "list" or (not action and not arg):
+            from elidia.tools.rag import _rag_list_sources
+            result = await _rag_list_sources()
+            self._console.print(result.content)
+            return True
+
+        if action == "clear":
+            session = _get_session()
+            if session.engine is not None:
+                n = session.engine.clear_all()
+                self._console.print(f"[green]v[/green] Deleted {n} chunk(s) — RAG store is now empty")
+            else:
+                self._console.print("[dim]RAG store not open this session.[/dim]")
+            return True
+
+        self._console.print("[yellow]Usage: /rag [ingest <path>|search <query>|list|clear][/yellow]")
         return True
 
     async def _cmd_daemon(self, arg: str) -> bool:

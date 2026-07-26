@@ -482,6 +482,8 @@ class AgentLoop:
             "calendar_list_events": "file_read",
             "calendar_find_conflicts": "file_read",
             "calendar_add_event": "file_write",
+            "rag_search": "rag_search",
+            "rag_list_sources": "rag_search",
         }
         return action_map.get(tool_name, "mcp_call_session")
 
