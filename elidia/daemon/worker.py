@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import sys
@@ -88,6 +89,10 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return await _handle_rag_search(request)
     if cmd == "rag_list_sources":
         return await _handle_rag_list_sources()
+    if cmd == "get_daemon_config":
+        return _handle_get_daemon_config()
+    if cmd == "get_audit_log":
+        return _handle_get_audit_log(request)
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
@@ -149,6 +154,48 @@ async def _handle_rag_list_sources() -> dict[str, Any]:
 
     result = await _rag_list_sources()
     return {"ok": not result.is_error, "content": result.content, "is_error": result.is_error}
+
+
+def _handle_get_daemon_config() -> dict[str, Any]:
+    """Return the current daemon.toml contents as a structured dict,
+    not raw TOML — the Desktop dashboard form reads/writes this shape."""
+    logger.debug("Entered into _handle_get_daemon_config")
+    config = load_daemon_config(CONFIG_FILE)
+    return {
+        "ok": True,
+        "config": {
+            "watchers": [
+                {"name": w.name, "path": w.path, "patterns": w.patterns, "interval": w.interval}
+                for w in config.watchers
+            ],
+            "schedules": [
+                {"name": s.name, "cron": s.cron, "command": s.command, "interval_seconds": s.interval_seconds}
+                for s in config.schedules
+            ],
+            "webhooks": [
+                {"name": h.name, "path": h.path, "port": h.port}
+                for h in config.webhooks
+            ],
+        },
+    }
+
+
+def _handle_get_audit_log(request: dict[str, Any]) -> dict[str, Any]:
+    """Return the last N lines of the audit log as parsed JSON objects."""
+    logger.debug("Entered into _handle_get_audit_log")
+    limit = request.get("limit", 50)
+    audit_path = ELIDIA_HOME / "audit.log"
+    if not audit_path.exists():
+        return {"ok": True, "entries": []}
+    lines = audit_path.read_text(encoding="utf-8").strip().split("\n")
+    recent = lines[-limit:]
+    entries = []
+    for line in recent:
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    return {"ok": True, "entries": entries}
 
 
 async def _build_chat_stream_handler(state: WorkerState):
