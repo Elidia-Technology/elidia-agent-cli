@@ -419,6 +419,16 @@ class AgentLoop:
             "git_commit": "command_exec",
             "web_search": "web_search",
             "http_fetch": "web_search",
+            "browser_navigate": "browser_read",
+            "browser_extract_links": "browser_read",
+            "browser_screenshot": "browser_read",
+            "browser_click": "browser_interact",
+            "browser_type": "browser_interact",
+            "read_docx": "file_read",
+            "read_xlsx": "file_read",
+            "read_pptx": "file_read",
+            "write_docx": "file_write",
+            "write_xlsx": "file_write",
         }
         return action_map.get(tool_name, "mcp_call_session")
 

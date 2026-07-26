@@ -29,6 +29,7 @@ ACTION_TIERS: dict[str, PermissionTier] = {
     "model_call": PermissionTier.AUTO,
     "clipboard_read": PermissionTier.AUTO,
     "mcp_call_auto": PermissionTier.AUTO,
+    "browser_read": PermissionTier.AUTO,
 
     "file_write_project": PermissionTier.SESSION,
     "command_exec": PermissionTier.SESSION,
@@ -42,6 +43,7 @@ ACTION_TIERS: dict[str, PermissionTier] = {
     "mcp_call_ask": PermissionTier.EVERY_TIME,
     "file_write_external": PermissionTier.EVERY_TIME,
     "code_execute": PermissionTier.EVERY_TIME,
+    "browser_interact": PermissionTier.EVERY_TIME,
 
     "keychain_access": PermissionTier.NEVER,
     "system_security": PermissionTier.NEVER,

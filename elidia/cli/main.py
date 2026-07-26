@@ -125,6 +125,7 @@ def ask(ctx: click.Context, message: tuple[str, ...], model: str | None, mode: s
 
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic"}
+_OFFICE_PARSERS = {".docx": "_parse_docx", ".xlsx": "_parse_xlsx", ".pptx": "_parse_pptx"}
 
 
 def _build_file_context(files: tuple[str, ...]) -> str:
@@ -147,7 +148,13 @@ def _build_file_context(files: tuple[str, ...]) -> str:
             if size > 1_000_000:
                 parts.append(f"[File too large to include: {path.name} ({size} bytes)]")
                 continue
-            content = path.read_text(encoding="utf-8", errors="replace")
+            suffix = path.suffix.lower()
+            if suffix in _OFFICE_PARSERS:
+                import elidia.rag.ingest as _ingest
+                parser = getattr(_ingest, _OFFICE_PARSERS[suffix])
+                content = parser(path) or f"[Could not extract text from {path.name}]"
+            else:
+                content = path.read_text(encoding="utf-8", errors="replace")
             if total + len(content) > max_total:
                 content = content[:max_total - total] + "\n... (truncated)"
             parts.append(f"--- {path.name} ---\n{content}\n--- end {path.name} ---")
