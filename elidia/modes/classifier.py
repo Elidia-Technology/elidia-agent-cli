@@ -70,7 +70,7 @@ FRESHNESS_PROMPT = (
     'User message: "{message}"\n\nJSON:'
 )
 
-CLASSIFIER_MODEL = "deepseek-chat"
+CLASSIFIER_MODEL = "deepseek-v4-flash"
 
 
 @dataclass

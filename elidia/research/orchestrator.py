@@ -111,7 +111,7 @@ class ResearchOrchestrator:
         self,
         client: AiUtilsClient,
         search_fn: Any = None,
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         max_results_per_query: int = 5,
     ) -> None:
         logger.debug("Entered into ResearchOrchestrator.__init__")

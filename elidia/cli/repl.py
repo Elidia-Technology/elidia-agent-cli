@@ -208,7 +208,7 @@ class ElidiaRepl:
         self._project_rules = load_project_rules()
 
         self._budget = BudgetGovernor(
-            session_limit_dt=self._config.budget.session_limit_dt if hasattr(self._config, "budget") else 50000.0,
+            session_limit_dt=self._config.budget.session_limit if hasattr(self._config, "budget") else 50000.0,
         )
         self._daemon = DaemonManager()
         self._research_sources = ResearchSources(mcp_registry=self._mcp_registry)

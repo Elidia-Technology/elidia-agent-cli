@@ -1,6 +1,6 @@
 """Deep think mode — routes to reasoning models and displays chain-of-thought.
 
-Selects reasoning-capable models (deepseek-reasoner, o1, etc.) and renders
+Selects reasoning-capable models (deepseek-v4-pro, o1, etc.) and renders
 the thinking/reasoning tokens to the terminal so the user can follow the
 model's step-by-step reasoning process.
 """
@@ -16,7 +16,7 @@ from elidia.api.client import AiUtilsClient, ChatMessage
 logger = logging.getLogger(__name__)
 
 REASONING_MODELS = [
-    "deepseek-reasoner",
+    "deepseek-v4-pro",
     "o1",
     "o1-mini",
     "gemini-2.5-pro",
@@ -24,7 +24,7 @@ REASONING_MODELS = [
     "claude-opus-4-8",
 ]
 
-DEFAULT_REASONING_MODEL = "deepseek-reasoner"
+DEFAULT_REASONING_MODEL = "deepseek-v4-pro"
 
 
 @dataclass

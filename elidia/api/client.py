@@ -76,7 +76,7 @@ class AiUtilsClient:
     async def chat_completion_stream(
         self,
         messages: list[ChatMessage],
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         temperature: float = 0.7,
         max_tokens: int | None = None,
     ) -> AsyncIterator[SSEEvent]:
@@ -152,7 +152,7 @@ class AiUtilsClient:
     async def chat_completion(
         self,
         messages: list[ChatMessage],
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         temperature: float = 0.7,
         max_tokens: int | None = None,
     ) -> ChatResponse:

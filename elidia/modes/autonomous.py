@@ -91,7 +91,7 @@ class AutonomousExecutor:
     def __init__(
         self,
         client: AiUtilsClient,
-        planner_model: str = "deepseek-chat",
+        planner_model: str = "deepseek-v4-flash",
         max_replans: int = 3,
         max_retries_per_task: int = 2,
     ) -> None:

@@ -70,8 +70,8 @@ class AgentSwarm:
         self,
         client: AiUtilsClient,
         execute_fn: Callable[[str, str], Coroutine[Any, Any, str]] | None = None,
-        supervisor_model: str = "deepseek-chat",
-        agent_model: str = "deepseek-chat",
+        supervisor_model: str = "deepseek-v4-flash",
+        agent_model: str = "deepseek-v4-flash",
         max_agents: int = 5,
     ) -> None:
         logger.debug(f"Entered into AgentSwarm.__init__: max_agents={max_agents}")

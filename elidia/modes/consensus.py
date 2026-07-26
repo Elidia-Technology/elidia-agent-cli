@@ -16,8 +16,8 @@ from elidia.api.client import AiUtilsClient, ChatMessage
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONSENSUS_MODELS = [
-    "claude-sonnet-5",
-    "deepseek-chat",
+    "claude-sonnet-4-6",
+    "deepseek-v4-flash",
     "gpt-5",
 ]
 
@@ -36,7 +36,7 @@ SYNTHESIS_PROMPT = (
     "Do not mention model names or say 'Model 1 said...'. Just give the best answer."
 )
 
-SYNTHESIZER_MODEL = "deepseek-chat"
+SYNTHESIZER_MODEL = "deepseek-v4-flash"
 
 
 @dataclass

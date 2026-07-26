@@ -12,13 +12,13 @@ class RouteDecision:
 
 
 TASK_TYPE_DEFAULTS = {
-    "chat": "deepseek-chat",
-    "code": "claude-sonnet-5",
-    "reasoning": "deepseek-reasoner",
+    "chat": "deepseek-v4-flash",
+    "code": "claude-sonnet-4-6",
+    "reasoning": "deepseek-v4-pro",
     "creative": "gpt-5",
-    "vision": "gpt-5-vision",
-    "embedding": "bge-m3",
-    "cheap": "gpt-5-mini",
+    "vision": "gpt-4o",
+    "embedding": "text-embedding-3-small",
+    "cheap": "gpt-4.1-mini",
 }
 
 
@@ -52,7 +52,7 @@ class ModelRouter:
             )
 
         task_type = self._classify_task(user_message, mode)
-        model = self._overrides.get(task_type) or TASK_TYPE_DEFAULTS.get(task_type, "deepseek-chat")
+        model = self._overrides.get(task_type) or TASK_TYPE_DEFAULTS.get(task_type, "deepseek-v4-flash")
 
         return RouteDecision(
             model=model,
@@ -64,11 +64,11 @@ class ModelRouter:
         """Classify the task type from the mode (LLM-determined or user-specified).
 
         Mode-to-task mapping:
-          code      → code tasks (claude-sonnet-5)
-          research  → reasoning tasks (deepseek-reasoner)
-          think     → reasoning (deepseek-reasoner)
+          code      → code tasks (claude-sonnet-4-6)
+          research  → reasoning tasks (deepseek-v4-pro)
+          think     → reasoning (deepseek-v4-pro)
           create    → creative tasks (gpt-5)
-          chat      → general chat (deepseek-chat), or cheap for trivial messages
+          chat      → general chat (deepseek-v4-flash), or cheap for trivial messages
 
         No keyword/regex matching — the LLM classifier (classify_mode) determines
         the execution mode, and this method simply maps that mode to the appropriate
@@ -93,4 +93,4 @@ class ModelRouter:
     def get_model_for_type(self, task_type: str) -> str:
         """Get the configured model for a specific task type."""
         logger.debug(f"Entered into get_model_for_type: task_type={task_type}")
-        return self._overrides.get(task_type) or TASK_TYPE_DEFAULTS.get(task_type, "deepseek-chat")
+        return self._overrides.get(task_type) or TASK_TYPE_DEFAULTS.get(task_type, "deepseek-v4-flash")

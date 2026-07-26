@@ -32,7 +32,7 @@ class SessionCompactor:
         messages: list[ChatMessage],
         session_id: str,
         project_path: str = "",
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
     ) -> str | None:
         logger.debug(f"Entered into compact_session: msg_count={len(messages)}, session_id={session_id}")
 

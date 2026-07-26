@@ -1,6 +1,12 @@
 """Embedding generation — remote API (primary) + local ONNX (offline fallback).
 
-Uses AiUtils Developer API by default (bge-m3, 1024-dim).
+Uses AiUtils Developer API by default. The Developer Platform's public
+/v1/embeddings only proxies real vendor models (OpenAI etc) — it does not
+serve the portal's internal bge-m3 model, so we request
+text-embedding-3-small with dimensions=1024 (Matryoshka truncation) to
+match bge-m3's native 1024-dim output that the rest of this codebase's
+local memory/RAG schema (sqlite-vec) is built around. Verified 2026-07-26:
+"bge-m3" as a model id 503s — it isn't a real model on this endpoint.
 Falls back to local ONNX Runtime when the model is available at
 ~/.elidia/models/bge-m3/ and the API is unreachable or balance is zero.
 """
@@ -15,7 +21,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "bge-m3"
+DEFAULT_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1024
 LOCAL_MODEL_DIR = Path.home() / ".elidia" / "models" / "bge-m3"
 
@@ -79,7 +85,7 @@ class EmbeddingClient:
         ) as client:
             resp = await client.post(
                 f"{self._base_url}/embeddings",
-                json={"input": texts, "model": model},
+                json={"input": texts, "model": model, "dimensions": EMBEDDING_DIM},
             )
             resp.raise_for_status()
             data = resp.json()

@@ -12,16 +12,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 MODEL_PRICING_DT_PER_KTOK: dict[str, tuple[float, float]] = {
-    "deepseek-chat": (0.14, 0.28),
-    "deepseek-reasoner": (0.55, 2.19),
-    "claude-sonnet-5": (3.0, 15.0),
+    "deepseek-v4-flash": (0.14, 0.28),
+    "deepseek-v4-pro": (0.55, 2.19),
+    "claude-sonnet-4-6": (3.0, 15.0),
     "claude-haiku-4-5": (0.80, 4.0),
     "claude-opus-4-8": (15.0, 75.0),
     "gpt-5": (5.0, 15.0),
-    "gpt-5-mini": (0.15, 0.60),
-    "gpt-5-vision": (5.0, 15.0),
-    "gemini-2.5-pro": (1.25, 10.0),
-    "gemini-2.5-flash": (0.15, 0.60),
+    "gpt-4.1-mini": (0.15, 0.60),
+    "gpt-4o": (10.0, 10.0),
     "llama-4-maverick": (0.20, 0.60),
     "qwen-3-235b": (0.30, 1.20),
 }

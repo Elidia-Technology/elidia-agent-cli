@@ -103,7 +103,7 @@ class TestBudgetGovernor:
 
     def test_estimate_cost(self):
         bg = BudgetGovernor()
-        est = bg.estimate_cost("deepseek-chat", 1000, 1000)
+        est = bg.estimate_cost("deepseek-v4-flash", 1000, 1000)
         expected = (1000 / 1000 * 0.14) + (1000 / 1000 * 0.28)
         assert est.estimated_dt == pytest.approx(expected)
 
@@ -115,12 +115,12 @@ class TestBudgetGovernor:
 
     def test_under_session_limit(self):
         bg = BudgetGovernor(session_limit_dt=50000.0)
-        est = bg.estimate_cost("deepseek-chat", 100, 100)
+        est = bg.estimate_cost("deepseek-v4-flash", 100, 100)
         assert not est.is_over_session_limit
 
     def test_check_and_allow(self):
         bg = BudgetGovernor(session_limit_dt=50000.0)
-        allowed, est = bg.check_and_allow("deepseek-chat", 100)
+        allowed, est = bg.check_and_allow("deepseek-v4-flash", 100)
         assert allowed
 
     def test_check_and_block(self):
@@ -174,7 +174,7 @@ class TestDeepThink:
         assert select_reasoning_model("o1") == "o1"
 
     def test_select_default(self):
-        assert select_reasoning_model(None) == "deepseek-reasoner"
+        assert select_reasoning_model(None) == "deepseek-v4-pro"
 
     def test_reasoning_models_list(self):
         assert len(REASONING_MODELS) >= 4

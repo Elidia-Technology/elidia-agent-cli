@@ -27,7 +27,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "You use tools to read files, run tests, and verify your work."
         ),
         greeting="Ready to code. What are we building?",
-        preferred_model="claude-sonnet-5",
+        preferred_model="claude-sonnet-4-6",
         preferred_tools=["file_read", "file_write", "file_edit", "file_grep", "command_exec", "git_status", "git_diff"],
         temperature=0.3,
     ),
@@ -41,7 +41,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "Cite your sources."
         ),
         greeting="What would you like me to research?",
-        preferred_model="deepseek-chat",
+        preferred_model="deepseek-v4-flash",
         preferred_tools=["web_search", "http_fetch", "file_read"],
         temperature=0.5,
     ),
@@ -54,7 +54,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "and provide actionable insights. You use code to process and analyze data."
         ),
         greeting="Share your data or describe what you'd like to analyze.",
-        preferred_model="deepseek-chat",
+        preferred_model="deepseek-v4-flash",
         preferred_tools=["file_read", "command_exec", "file_write"],
         temperature=0.4,
     ),
@@ -81,7 +81,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "You always check system state before making changes."
         ),
         greeting="What infrastructure or deployment task do you need help with?",
-        preferred_model="claude-sonnet-5",
+        preferred_model="claude-sonnet-4-6",
         preferred_tools=["command_exec", "file_read", "file_write", "file_edit", "git_status"],
         temperature=0.3,
     ),
@@ -96,7 +96,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "research and analysis."
         ),
         greeting="What legal matter would you like me to research?",
-        preferred_model="deepseek-reasoner",
+        preferred_model="deepseek-v4-pro",
         preferred_tools=["web_search", "http_fetch", "file_read", "file_write"],
         temperature=0.3,
     ),
@@ -125,7 +125,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "You provide structured analysis of regulatory requirements and compliance risks."
         ),
         greeting="What pharmaceutical regulatory question can I help with?",
-        preferred_model="deepseek-reasoner",
+        preferred_model="deepseek-v4-pro",
         preferred_tools=["web_search", "http_fetch", "file_read", "file_write"],
         temperature=0.2,
     ),
@@ -139,7 +139,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "economic indicators, portfolio data, and market analytics."
         ),
         greeting="What financial analysis do you need?",
-        preferred_model="deepseek-reasoner",
+        preferred_model="deepseek-v4-pro",
         preferred_tools=["web_search", "http_fetch", "file_read", "command_exec", "file_write"],
         temperature=0.3,
     ),
@@ -153,7 +153,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "marketing plans. You stay current with algorithm changes and best practices."
         ),
         greeting="What marketing challenge are you working on?",
-        preferred_model="gpt-5-mini",
+        preferred_model="gpt-4.1-mini",
         preferred_tools=["web_search", "http_fetch", "file_read", "file_write"],
         temperature=0.6,
     ),
@@ -196,7 +196,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "development strategies."
         ),
         greeting="How can I help with your career?",
-        preferred_model="gpt-5-mini",
+        preferred_model="gpt-4.1-mini",
         preferred_tools=["web_search", "file_read", "file_write"],
         temperature=0.5,
     ),
@@ -210,7 +210,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "You adapt explanations to the learner's level and provide practice exercises."
         ),
         greeting="What would you like to learn about?",
-        preferred_model="deepseek-chat",
+        preferred_model="deepseek-v4-flash",
         preferred_tools=["web_search", "http_fetch", "file_read", "file_write"],
         temperature=0.5,
     ),
@@ -224,7 +224,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "You prioritize scientific research and individualized recommendations."
         ),
         greeting="What aspect of your lifestyle would you like to optimize?",
-        preferred_model="gpt-5-mini",
+        preferred_model="gpt-4.1-mini",
         preferred_tools=["web_search", "file_read"],
         temperature=0.5,
     ),
@@ -238,7 +238,7 @@ BUILT_IN_PERSONAS: dict[str, DomainPersona] = {
             "with PDFs, spreadsheets, images, and structured data."
         ),
         greeting="What data or file do you need transformed?",
-        preferred_model="gpt-5-mini",
+        preferred_model="gpt-4.1-mini",
         preferred_tools=["file_read", "file_write", "command_exec"],
         temperature=0.3,
     ),

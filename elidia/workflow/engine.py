@@ -119,7 +119,7 @@ class WorkflowExecutor:
         self,
         client: AiUtilsClient | None = None,
         tool_execute_fn: Any = None,
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
     ) -> None:
         logger.debug("Entered into WorkflowExecutor.__init__")
         self._client = client

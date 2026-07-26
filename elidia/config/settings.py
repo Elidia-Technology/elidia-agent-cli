@@ -23,11 +23,11 @@ class ApiConfig:
 @dataclasses.dataclass
 class ModelConfig:
     default: str = "auto"
-    reasoning: str = "deepseek-reasoner"
-    code: str = "claude-sonnet-5"
+    reasoning: str = "deepseek-v4-pro"
+    code: str = "claude-sonnet-4-6"
     creative: str = "gpt-5"
-    cheap: str = "deepseek-chat"
-    vision: str = "gpt-5-vision"
+    cheap: str = "deepseek-v4-flash"
+    vision: str = "gpt-4o"
     embedding: str = "local"
 
 
