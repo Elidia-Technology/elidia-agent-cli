@@ -433,6 +433,9 @@ class AgentLoop:
             "db_query": "db_query",
             "db_list_tables": "db_query",
             "db_describe_table": "db_query",
+            "email_send": "email_send",
+            "email_search": "email_read",
+            "email_read": "email_read",
         }
         return action_map.get(tool_name, "mcp_call_session")
 

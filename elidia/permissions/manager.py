@@ -35,6 +35,7 @@ ACTION_TIERS: dict[str, PermissionTier] = {
     "command_exec": PermissionTier.SESSION,
     "mcp_call_session": PermissionTier.SESSION,
     "file_read_external": PermissionTier.SESSION,
+    "email_read": PermissionTier.SESSION,
 
     "file_delete": PermissionTier.EVERY_TIME,
     "git_push": PermissionTier.EVERY_TIME,

@@ -263,6 +263,51 @@ def auth_status() -> None:
     asyncio.run(_show_balance())
 
 
+@auth.command("email-login")
+def auth_email_login() -> None:
+    """Store email credentials (app password, not your account password) for Email Skills."""
+    logger.debug("Entered into auth_email_login")
+    from elidia.auth.keychain import store_email_credentials
+
+    console.print(
+        "[dim]Use an app password, not your real account password — "
+        "Gmail/Outlook/etc. all support generating one for exactly this.[/dim]"
+    )
+    address = click.prompt("Email address")
+    password = click.prompt("App password", hide_input=True)
+    smtp_host = click.prompt("SMTP host", default=f"smtp.{address.split('@')[-1]}")
+    smtp_port = click.prompt("SMTP port", default=587, type=int)
+    imap_host = click.prompt("IMAP host", default=f"imap.{address.split('@')[-1]}")
+    imap_port = click.prompt("IMAP port", default=993, type=int)
+
+    store_email_credentials(address, password, smtp_host, smtp_port, imap_host, imap_port)
+    console.print(f"[green]v[/green] Email account configured: {address}")
+
+
+@auth.command("email-logout")
+def auth_email_logout() -> None:
+    """Remove stored email credentials."""
+    logger.debug("Entered into auth_email_logout")
+    from elidia.auth.keychain import delete_email_credentials
+
+    delete_email_credentials()
+    console.print("[green]v[/green] Email credentials removed.")
+
+
+@auth.command("email-status")
+def auth_email_status() -> None:
+    """Show configured email account, if any."""
+    logger.debug("Entered into auth_email_status")
+    from elidia.auth.keychain import get_email_credentials
+
+    creds = get_email_credentials()
+    if not creds:
+        console.print("[yellow]No email account configured.[/yellow] Run: elidia auth email-login")
+        return
+    console.print(f"Email account: {creds['address']}")
+    console.print(f"SMTP: {creds['smtp_host']}:{creds['smtp_port']}  IMAP: {creds['imap_host']}:{creds['imap_port']}")
+
+
 # --- Config subcommands ---
 
 

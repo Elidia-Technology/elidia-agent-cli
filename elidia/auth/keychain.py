@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import stat
@@ -13,6 +14,14 @@ SERVICE_NAME = "elidia-cli"
 ACCOUNT_NAME = "api_key"
 
 _FALLBACK_KEY_PATH = ELIDIA_HOME / ".api_key"
+
+# Separate service name from the AiUtils API key above — a leaked email
+# app-password and a leaked AiUtils API key are different-severity
+# incidents, and keeping them in unrelated keyring entries means deleting
+# or rotating one never touches the other.
+_EMAIL_SERVICE_NAME = "elidia-cli-email"
+_EMAIL_ACCOUNT_NAME = "credentials"
+_EMAIL_FALLBACK_PATH = ELIDIA_HOME / ".email_credentials"
 
 
 def store_api_key(key: str) -> None:
@@ -84,3 +93,65 @@ def mask_api_key(key: str) -> str:
     if len(key) <= 12:
         return "ak-dev-****"
     return f"{key[:7]}****{key[-4:]}"
+
+
+def store_email_credentials(
+    address: str, password: str,
+    smtp_host: str, smtp_port: int,
+    imap_host: str, imap_port: int,
+) -> None:
+    """Store email credentials (app password, not the account password) as
+    a JSON blob in the OS keychain, under a service name separate from the
+    AiUtils API key. Fallback to an encrypted file, same as store_api_key."""
+    logger.debug(f"Entered into store_email_credentials: address={address}")
+    payload = json.dumps({
+        "address": address, "password": password,
+        "smtp_host": smtp_host, "smtp_port": smtp_port,
+        "imap_host": imap_host, "imap_port": imap_port,
+    })
+    try:
+        keyring.set_password(_EMAIL_SERVICE_NAME, _EMAIL_ACCOUNT_NAME, payload)
+    except keyring.errors.KeyringError as exc:
+        logger.warning(
+            f"Entered into store_email_credentials: keychain unavailable ({exc.__class__.__name__}), falling back to file storage"
+        )
+        ELIDIA_HOME.mkdir(parents=True, exist_ok=True)
+        _EMAIL_FALLBACK_PATH.write_text(payload, encoding="utf-8")
+        os.chmod(_EMAIL_FALLBACK_PATH, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def get_email_credentials() -> dict | None:
+    """Retrieve email credentials dict, or None if never configured."""
+    logger.debug("Entered into get_email_credentials")
+    payload: str | None = None
+    try:
+        payload = keyring.get_password(_EMAIL_SERVICE_NAME, _EMAIL_ACCOUNT_NAME)
+    except keyring.errors.KeyringError as exc:
+        logger.warning(
+            f"Entered into get_email_credentials: keychain unavailable ({exc.__class__.__name__}), checking fallback file"
+        )
+
+    if not payload and _EMAIL_FALLBACK_PATH.exists():
+        payload = _EMAIL_FALLBACK_PATH.read_text(encoding="utf-8").strip()
+
+    if not payload:
+        return None
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        logger.warning("Entered into get_email_credentials: stored credentials are corrupt (not valid JSON)")
+        return None
+
+
+def delete_email_credentials() -> None:
+    """Remove email credentials from keychain and fallback file."""
+    logger.debug("Entered into delete_email_credentials")
+    try:
+        keyring.delete_password(_EMAIL_SERVICE_NAME, _EMAIL_ACCOUNT_NAME)
+    except keyring.errors.PasswordDeleteError:
+        pass
+    except keyring.errors.KeyringError as exc:
+        logger.warning(f"Entered into delete_email_credentials: keychain unavailable ({exc.__class__.__name__})")
+
+    if _EMAIL_FALLBACK_PATH.exists():
+        _EMAIL_FALLBACK_PATH.unlink()

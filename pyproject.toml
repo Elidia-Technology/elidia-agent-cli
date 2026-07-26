@@ -39,6 +39,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "ruff>=0.5",
+    "aiosmtpd>=1.4",
 ]
 local = [
     "torch>=2.0",
