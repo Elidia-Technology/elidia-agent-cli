@@ -46,7 +46,7 @@ async def _email_send(to: str, subject: str, body: str) -> ToolResult:
     try:
         msg = MIMEText(body)
         msg["Subject"] = subject
-        msg["From"] = creds["address"]
+        msg["From"] = creds.get("from_address") or creds["address"]
         msg["To"] = to
         msg["Date"] = email.utils.formatdate(localtime=True)
 

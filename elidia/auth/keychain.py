@@ -99,15 +99,24 @@ def store_email_credentials(
     address: str, password: str,
     smtp_host: str, smtp_port: int,
     imap_host: str, imap_port: int,
+    from_address: str | None = None,
 ) -> None:
     """Store email credentials (app password, not the account password) as
     a JSON blob in the OS keychain, under a service name separate from the
-    AiUtils API key. Fallback to an encrypted file, same as store_api_key."""
+    AiUtils API key. Fallback to an encrypted file, same as store_api_key.
+
+    `address` is the SMTP/IMAP login (AUTH username). For personal webmail
+    (Gmail, Outlook) this is the same as the visible sender. For
+    transactional relays (Zepto, SendGrid, Mailgun, SES) the AUTH username
+    is a fixed token distinct from the sender address, so `from_address`
+    lets those be configured separately — it defaults to `address` when
+    omitted, which keeps the common case a no-op."""
     logger.debug(f"Entered into store_email_credentials: address={address}")
     payload = json.dumps({
         "address": address, "password": password,
         "smtp_host": smtp_host, "smtp_port": smtp_port,
         "imap_host": imap_host, "imap_port": imap_port,
+        "from_address": from_address or address,
     })
     try:
         keyring.set_password(_EMAIL_SERVICE_NAME, _EMAIL_ACCOUNT_NAME, payload)

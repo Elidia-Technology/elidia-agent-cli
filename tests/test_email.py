@@ -117,6 +117,28 @@ class TestEmailSendLive:
         assert "Test body content." in raw
 
     @pytest.mark.asyncio
+    async def test_send_uses_from_address_when_login_is_a_relay_token(self, smtp_server):
+        """Transactional relays (Zepto, SendGrid, Mailgun) authenticate with a
+        fixed API-key-style username distinct from the visible sender address.
+        The SMTP AUTH login must stay the token, but the From header must use
+        from_address, not the login token itself."""
+        controller, handler = smtp_server
+        # `address` stays the real login the fake server accepts (TEST_USER) —
+        # only from_address diverges, mirroring a relay where the AUTH token
+        # itself would never be a valid login on a real server either.
+        creds = _mock_creds(controller.hostname, controller.port)
+        creds["from_address"] = "no-reply@aiutils.io"
+
+        with patch("elidia.auth.keychain.get_email_credentials", return_value=creds):
+            result = await _email_send("recipient@example.com", "Relay Test", "Body")
+
+        assert not result.is_error, result.content
+        envelope = handler.envelopes[0]
+        raw = envelope.content.decode("utf-8", errors="replace")
+        assert "From: no-reply@aiutils.io" in raw
+        assert f"From: {TEST_USER}" not in raw
+
+    @pytest.mark.asyncio
     async def test_send_wrong_password_is_rejected(self, smtp_server):
         controller, handler = smtp_server
         creds = _mock_creds(controller.hostname, controller.port)
