@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from elidia.daemon.ipc import DaemonIPCServer, send_request
+from elidia.daemon.ipc import DaemonIPCServer, send_request, stream_request
 
 
 class TestIPCRoundTrip:
@@ -93,3 +93,107 @@ class TestIPCRoundTrip:
             assert r2["call_number"] == 2
         finally:
             await server.stop()
+
+import asyncio
+
+class TestStreamingProtocol:
+    """New in Phase 0 (Elidia Agent Desktop IPC bridge) — the daemon socket
+    now supports streaming commands where one request yields MULTIPLE response
+    lines (one per event), terminated by {"event":"done"}, on the same Unix
+    socket the existing single-response commands already use."""
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_yields_tool_call_and_content_then_done(self, tmp_dir: Path):
+        socket_path = tmp_dir / "test.sock"
+
+        async def stream_handler(request):
+            for e in [
+                {"event": "thinking", "data": {"model": "test-model"}},
+                {"event": "tool_call", "data": {"name": "file_read", "arguments": {"path": "x.txt"}}},
+                {"event": "tool_result", "data": {"name": "file_read", "content": "hello"}},
+                {"event": "content", "data": "The file says: hello"},
+            ]:
+                yield e
+
+        server = DaemonIPCServer(socket_path, handler=lambda r: {"ok": False}, stream_handler=stream_handler)
+        await server.start()
+        try:
+            events = []
+            async for event in stream_request(socket_path, {"cmd": "chat", "messages": [{"role": "user", "content": "read x.txt"}]}):
+                events.append(event)
+            assert len(events) == 5  # 4 handler events + 1 trailing done
+            assert events[1]["event"] == "tool_call"
+            assert events[1]["data"]["name"] == "file_read"
+            assert events[-1]["event"] == "done"
+        finally:
+            await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_stream_handler_exception_becomes_error_event_then_done(self, tmp_dir: Path):
+        socket_path = tmp_dir / "test.sock"
+
+        async def stream_handler(request):
+            yield {"event": "content", "data": "before"}
+            raise RuntimeError("mid-stream crash")
+
+        server = DaemonIPCServer(socket_path, handler=lambda r: {"ok": False}, stream_handler=stream_handler)
+        await server.start()
+        try:
+            events = []
+            async for event in stream_request(socket_path, {"cmd": "chat", "messages": []}):
+                events.append(event)
+            assert events[0]["event"] == "content"
+            assert events[1]["event"] == "error"
+            assert "mid-stream crash" in events[1]["data"]
+            assert events[2]["event"] == "done"
+        finally:
+            await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_non_streaming_command_still_uses_original_handler(self, tmp_dir: Path):
+        """A command NOT in STREAMING_COMMANDS (e.g. 'ping') must still go through
+        the regular single-response handler even when a stream_handler is also
+        configured on the same server."""
+        socket_path = tmp_dir / "test.sock"
+
+        async def handler(request):
+            return {"ok": True, "cmd": request.get("cmd")}
+
+        async def stream_handler(request):
+            yield {"event": "should", "data": "not be called"}
+
+        server = DaemonIPCServer(socket_path, handler=handler, stream_handler=stream_handler)
+        await server.start()
+        try:
+            response = await send_request(socket_path, {"cmd": "ping"})
+            assert response == {"ok": True, "cmd": "ping"}
+        finally:
+            await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_stream_client_times_out_on_overall_deadline(self, tmp_dir: Path):
+        socket_path = tmp_dir / "test.sock"
+
+        async def stream_handler(request):
+            yield {"event": "content", "data": "starts"}
+            await asyncio.sleep(20)  # way past stream_request's timeout
+
+        server = DaemonIPCServer(socket_path, handler=lambda r: {"ok": False}, stream_handler=stream_handler)
+        await server.start()
+        try:
+            events = []
+            with pytest.raises(TimeoutError):
+                async for event in stream_request(socket_path, {"cmd": "chat", "messages": []}, timeout=2.0):
+                    events.append(event)
+            assert len(events) == 1
+            assert events[0]["event"] == "content"
+        finally:
+            await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_send_request_connection_error_still_raised(self, tmp_dir: Path):
+        """send_request is for simple commands; having a stream_handler does
+        not affect its behavior when no server is listening."""
+        socket_path = tmp_dir / "nobody.sock"
+        with pytest.raises((ConnectionRefusedError, FileNotFoundError, OSError)):
+            await send_request(socket_path, {"cmd": "status"}, timeout=1.0)
