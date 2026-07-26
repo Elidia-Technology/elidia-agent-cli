@@ -1,5 +1,6 @@
 from elidia.tools.base import ToolDefinition, ToolRegistry, ToolResult
 from elidia.tools.browser import register_browser_tools
+from elidia.tools.calendar import register_calendar_tools
 from elidia.tools.database import register_database_tools
 from elidia.tools.email import register_email_tools
 from elidia.tools.fetch import register_fetch_tools
@@ -14,6 +15,7 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "register_browser_tools",
+    "register_calendar_tools",
     "register_database_tools",
     "register_email_tools",
     "register_fetch_tools",
@@ -37,4 +39,5 @@ def create_default_registry() -> ToolRegistry:
     register_office_tools(registry)
     register_database_tools(registry)
     register_email_tools(registry)
+    register_calendar_tools(registry)
     return registry

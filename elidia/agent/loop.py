@@ -436,6 +436,9 @@ class AgentLoop:
             "email_send": "email_send",
             "email_search": "email_read",
             "email_read": "email_read",
+            "calendar_list_events": "file_read",
+            "calendar_find_conflicts": "file_read",
+            "calendar_add_event": "file_write",
         }
         return action_map.get(tool_name, "mcp_call_session")
 

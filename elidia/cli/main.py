@@ -128,6 +128,31 @@ _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", 
 _OFFICE_PARSERS = {".docx": "_parse_docx", ".xlsx": "_parse_xlsx", ".pptx": "_parse_pptx"}
 
 
+def _summarize_ics(path: Path) -> str:
+    """Format .ics events as readable lines instead of raw VCALENDAR/VEVENT
+    markup. Not a correctness fix like the office-doc parsers above (.ics is
+    plain text, so raw content already reaches the model intact) — just a
+    clearer format for what's usually the actually-relevant question
+    ("what's on my schedule")."""
+    try:
+        from icalendar import Calendar
+    except ImportError:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    try:
+        cal = Calendar.from_ical(path.read_bytes())
+    except Exception:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    lines = []
+    for component in cal.walk("VEVENT"):
+        summary = str(component.get("summary", "(no title)"))
+        start = component.get("dtstart")
+        end = component.get("dtend")
+        lines.append(f"{summary}: {start.dt if start else '?'} - {end.dt if end else '?'}")
+    return "\n".join(lines) if lines else "[No events in this calendar]"
+
+
 def _build_file_context(files: tuple[str, ...]) -> str:
     """Read file contents and build a context prefix for the message."""
     if not files:
@@ -153,6 +178,8 @@ def _build_file_context(files: tuple[str, ...]) -> str:
                 import elidia.rag.ingest as _ingest
                 parser = getattr(_ingest, _OFFICE_PARSERS[suffix])
                 content = parser(path) or f"[Could not extract text from {path.name}]"
+            elif suffix == ".ics":
+                content = _summarize_ics(path)
             else:
                 content = path.read_text(encoding="utf-8", errors="replace")
             if total + len(content) > max_total:

@@ -59,6 +59,9 @@ database = [
     "sqlalchemy>=2.0",
     "sqlparse>=0.5",
 ]
+calendar = [
+    "icalendar>=5.0",
+]
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
