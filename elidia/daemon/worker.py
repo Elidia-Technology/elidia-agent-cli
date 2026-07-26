@@ -84,6 +84,10 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return await _handle_list_tools(state)
     if cmd == "list_sessions":
         return await _handle_list_sessions(state)
+    if cmd == "rag_search":
+        return await _handle_rag_search(request)
+    if cmd == "rag_list_sources":
+        return await _handle_rag_list_sources()
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
@@ -123,6 +127,28 @@ async def _handle_list_sessions(state: WorkerState) -> dict[str, Any]:
         return {"ok": False, "error": str(e)}
     finally:
         db.close()
+
+
+async def _handle_rag_search(request: dict[str, Any]) -> dict[str, Any]:
+    """Search ingested RAG content — reuses elidia/tools/rag.py directly,
+    not a separate implementation."""
+    logger.debug("Entered into _handle_rag_search")
+    from elidia.tools.rag import _rag_search
+
+    query = request.get("query", "")
+    limit = request.get("limit", 5)
+    if not query:
+        return {"ok": False, "error": "missing required field: query"}
+    result = await _rag_search(query, limit=limit)
+    return {"ok": not result.is_error, "content": result.content, "is_error": result.is_error}
+
+
+async def _handle_rag_list_sources() -> dict[str, Any]:
+    logger.debug("Entered into _handle_rag_list_sources")
+    from elidia.tools.rag import _rag_list_sources
+
+    result = await _rag_list_sources()
+    return {"ok": not result.is_error, "content": result.content, "is_error": result.is_error}
 
 
 async def _build_chat_stream_handler(state: WorkerState):
