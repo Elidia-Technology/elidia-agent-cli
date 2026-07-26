@@ -436,3 +436,203 @@ def show_version() -> None:
     """Show version information."""
     logger.debug("Entered into show_version")
     console.print(f"elidia-cli v{VERSION}")
+
+
+# --- Daemon subcommands ---
+#
+# Real background-process daemon: `elidia daemon start` spawns a detached
+# process (elidia/daemon/worker.py) that outlives this command, tracked via
+# a PID file, queryable/stoppable from any later `elidia daemon ...`
+# invocation over a Unix socket (elidia/daemon/ipc.py). The `/daemon` REPL
+# slash command is a different, narrower thing — an in-process task runner
+# scoped to that one REPL session; this is the standalone version the
+# README's `$ elidia daemon start` / `$ elidia daemon status` examples
+# actually need.
+
+
+@cli.group()
+def daemon() -> None:
+    """Manage the background daemon (persists across separate CLI invocations)."""
+
+
+@daemon.command("start")
+def daemon_start() -> None:
+    """Start the daemon as a detached background process."""
+    logger.debug("Entered into daemon_start")
+    from elidia.daemon.process import start_daemon
+    from elidia.daemon.worker import CONFIG_FILE
+
+    try:
+        pid = start_daemon()
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+    console.print(f"[green]v[/green] Daemon started (pid {pid}).")
+    if not CONFIG_FILE.exists():
+        console.print(f"[dim]No tasks configured — run 'elidia daemon init' to create {CONFIG_FILE}[/dim]")
+
+
+@daemon.command("stop")
+def daemon_stop() -> None:
+    """Stop the running daemon."""
+    logger.debug("Entered into daemon_stop")
+    from elidia.daemon.process import stop_daemon
+
+    stopped = asyncio.run(stop_daemon())
+    if stopped:
+        console.print("[green]v[/green] Daemon stopped.")
+    else:
+        console.print("[yellow]Daemon is not running.[/yellow]")
+
+
+@daemon.command("restart")
+def daemon_restart() -> None:
+    """Restart the daemon (stop, then start)."""
+    logger.debug("Entered into daemon_restart")
+    from elidia.daemon.process import start_daemon, stop_daemon
+
+    asyncio.run(stop_daemon())
+    try:
+        pid = start_daemon()
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+    console.print(f"[green]v[/green] Daemon restarted (pid {pid}).")
+
+
+@daemon.command("status")
+def daemon_status() -> None:
+    """Show whether the daemon is running and what tasks it has."""
+    logger.debug("Entered into daemon_status")
+    from elidia.daemon.process import get_daemon_status, is_daemon_running
+
+    running, pid = is_daemon_running()
+    if not running:
+        console.print("[yellow]Daemon is not running.[/yellow] Run: elidia daemon start")
+        return
+
+    status = asyncio.run(get_daemon_status())
+    if status is None:
+        console.print(f"[yellow]Daemon process (pid {pid}) is alive but not responding to status queries.[/yellow]")
+        return
+
+    console.print(f"[green]Running[/green] (pid {pid})")
+    console.print(f"Tasks: {status['task_count']} ({status['active']} active)")
+    for t in status.get("tasks", []):
+        style = "green" if t["status"] == "running" else "dim"
+        console.print(f"  [{style}]{t['status']:8s}[/{style}] {t['name']} ({t['type']}) runs={t['run_count']}")
+
+
+@daemon.command("init")
+def daemon_init() -> None:
+    """Write an example daemon task config to ~/.elidia/daemon.toml."""
+    logger.debug("Entered into daemon_init")
+    from elidia.daemon.config import write_example_daemon_config
+    from elidia.daemon.worker import CONFIG_FILE
+
+    if CONFIG_FILE.exists():
+        console.print(f"[yellow]{CONFIG_FILE} already exists — not overwriting.[/yellow]")
+        return
+    write_example_daemon_config(CONFIG_FILE)
+    console.print(f"[green]v[/green] Wrote example config to {CONFIG_FILE}")
+
+
+# --- MCP subcommands ---
+
+
+@cli.group()
+def mcp() -> None:
+    """Manage MCP (Model Context Protocol) server connections."""
+
+
+@mcp.command("list")
+def mcp_list() -> None:
+    """List configured MCP servers and their connection status."""
+    logger.debug("Entered into mcp_list")
+    from elidia.mcp.config import load_mcp_config
+
+    configs = load_mcp_config()
+    if not configs:
+        console.print("[dim]No MCP servers configured. Edit ~/.elidia/mcp.json to add one.[/dim]")
+        return
+    for name, cfg in configs.items():
+        state = "enabled" if cfg.enabled else "disabled"
+        console.print(f"  {name}: {state} ({cfg.command})")
+
+
+@mcp.command("health")
+def mcp_health() -> None:
+    """Connect to all enabled MCP servers and report status."""
+    logger.debug("Entered into mcp_health")
+    from elidia.mcp.registry import MCPRegistry
+
+    async def _check() -> None:
+        registry = MCPRegistry()
+        await registry.load_and_connect()
+        servers = registry.get_connected_servers()
+        if not servers:
+            console.print("[yellow]No MCP servers connected.[/yellow]")
+        else:
+            for name, tool_count in servers.items():
+                console.print(f"  [green]connected[/green] {name} ({tool_count} tools)")
+        await registry.disconnect_all()
+
+    asyncio.run(_check())
+
+
+# --- Workflow subcommands ---
+
+
+@cli.group()
+def workflow() -> None:
+    """Run YAML-defined workflow pipelines."""
+
+
+@workflow.command("run")
+@click.argument("path", type=click.Path(exists=True))
+def workflow_run(path: str) -> None:
+    """Execute a workflow YAML file."""
+    logger.debug(f"Entered into workflow_run: path={path}")
+    from elidia.workflow.engine import WorkflowExecutor, parse_workflow
+
+    try:
+        wf = parse_workflow(Path(path))
+    except Exception as e:
+        console.print(f"[red]Failed to parse workflow: {e}[/red]")
+        raise SystemExit(1) from None
+
+    async def _run() -> None:
+        from elidia.api.client import AiUtilsClient
+        from elidia.auth.keychain import get_api_key
+        from elidia.config.settings import load_config
+
+        api_key = get_api_key()
+        if not api_key:
+            console.print("[red]No API key configured. Run: elidia auth login[/red]")
+            raise SystemExit(1)
+
+        config = load_config()
+        client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+        executor = WorkflowExecutor(client=client)
+
+        console.print(f"[cyan]Running workflow:[/cyan] {wf.name}")
+        try:
+            async for event in executor.run(wf):
+                if event.kind == "start":
+                    console.print(f"  [dim]Steps: {event.data.get('step_count', 0)}[/dim]")
+                elif event.kind == "step_start":
+                    console.print(f"  [cyan]>{event.data['name']}[/cyan] ({event.data['type']})")
+                elif event.kind == "step_done":
+                    status = event.data.get("status", "?")
+                    elapsed = event.data.get("elapsed_ms", 0)
+                    style = "green" if status == "completed" else "yellow" if status == "skipped" else "red"
+                    console.print(f"  [{style}]{status}[/{style}] {event.data['name']} ({elapsed}ms)")
+                elif event.kind == "done":
+                    console.print(
+                        f"[green]v[/green] Workflow complete: {event.data.get('completed', 0)}/"
+                        f"{event.data.get('total_steps', 0)} steps ({event.data.get('elapsed_ms', 0)}ms)"
+                    )
+        finally:
+            await client.close()
+
+    asyncio.run(_run())
