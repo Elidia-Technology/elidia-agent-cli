@@ -195,11 +195,7 @@ class DaemonManager:
         )
         self._tasks[task_id] = task
 
-        async def _wrapped_callback():
-            if callback:
-                await callback(name=name, description=description, working_dir=working_dir, model=model, max_iterations=max_iterations, auto_commit=auto_commit)
-
-        return self.add_cron_schedule(name=name, cron=cron, command="", callback=_wrapped_callback)
+        return self.add_cron_schedule(name=name, cron_expr=cron, command="echo ok", callback=callback)
 
     async def remove_task(self, task_id: str) -> bool:
         logger.debug(f"Entered into remove_task: id={task_id}")

@@ -647,16 +647,19 @@ async def _permission_prompt_fn(state: WorkerState, description: str) -> bool:
         state._permission_results.pop(req_id, None)
 
 
-async def _run_coding_task(**kwargs) -> None:
+async def _run_coding_task(task=None, **kwargs) -> None:
     """Callback for autonomous coding tasks (AIUT-2155). Initialises a fresh
     AgentLoop in AUTONOMOUS mode, runs the agent against the task description,
-    optionally commits changes, and logs the result."""
-    name = kwargs.get("name", "unnamed")
-    description = kwargs.get("description", "")
-    working_dir = kwargs.get("working_dir", ".")
-    model = kwargs.get("model", "claude-sonnet-4-6")
-    max_iterations = kwargs.get("max_iterations", 25)
-    auto_commit = kwargs.get("auto_commit", False)
+    optionally commits changes, and logs the result.
+
+    Called by DaemonManager._run_schedule as callback(task=task)."""
+    cfg = task.config if task else {}
+    name = cfg.get("name", "unnamed")
+    description = cfg.get("description", "")
+    working_dir = cfg.get("working_dir", ".")
+    model = cfg.get("model", "claude-sonnet-4-6")
+    max_iterations = cfg.get("max_iterations", 25)
+    auto_commit = cfg.get("auto_commit", False)
     logger.info(f"Coding task '{name}' starting: {description[:100]}")
 
     from elidia.auth.keychain import get_api_key
