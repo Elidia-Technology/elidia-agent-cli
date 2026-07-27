@@ -96,6 +96,8 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return await _handle_list_tools(state)
     if cmd == "list_sessions":
         return await _handle_list_sessions(state)
+    if cmd == "get_session_messages":
+        return _handle_get_session_messages(request)
     if cmd == "rag_search":
         return await _handle_rag_search(request)
     if cmd == "rag_list_sources":
@@ -185,6 +187,28 @@ async def _handle_list_sessions(state: WorkerState) -> dict[str, Any]:
         sm = SessionManager(db)
         sessions = sm.list_sessions(limit=20)
         return {"ok": True, "sessions": sessions}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        db.close()
+
+
+def _handle_get_session_messages(request: dict[str, Any]) -> dict[str, Any]:
+    """Return messages for a session from elidia.db — used by the Desktop
+    sidebar when the user clicks a past session to resume it."""
+    logger.debug("Entered into _handle_get_session_messages")
+    from elidia.db.database import Database
+    from elidia.session.manager import SessionManager
+
+    session_id = request.get("session_id", "")
+    if not session_id:
+        return {"ok": False, "error": "missing required field: session_id"}
+    db = Database()
+    try:
+        db.connect()
+        sm = SessionManager(db)
+        messages = sm.get_messages(session_id, limit=100)
+        return {"ok": True, "messages": messages}
     except Exception as e:
         return {"ok": False, "error": str(e)}
     finally:
