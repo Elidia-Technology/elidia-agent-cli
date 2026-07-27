@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from enum import IntEnum
@@ -132,7 +133,7 @@ class PermissionManager:
 
         return action
 
-    def check(
+    async def check(
         self,
         action: str,
         session_id: str = "",
@@ -156,7 +157,7 @@ class PermissionManager:
 
         if tier == PermissionTier.AUTO:
             if classified == "file_read_project" and not self._config.auto_approve_reads:
-                return self._ask_permission(classified, tier, session_id, description)
+                return await self._ask_permission(classified, tier, session_id, description)
             if classified == "file_write_project" and self._config.auto_approve_writes:
                 self._audit.log_permission_check(
                     action=classified, tier=1, approved=True,
@@ -201,11 +202,11 @@ class PermissionManager:
                 )
                 return True
 
-            return self._ask_permission(classified, tier, session_id, description)
+            return await self._ask_permission(classified, tier, session_id, description)
 
-        return self._ask_permission(classified, tier, session_id, description)
+        return await self._ask_permission(classified, tier, session_id, description)
 
-    def _ask_permission(
+    async def _ask_permission(
         self, action: str, tier: int, session_id: str, description: str
     ) -> bool:
         logger.debug(f"Entered into _ask_permission: action={action}, tier={tier}")
@@ -229,7 +230,11 @@ class PermissionManager:
             return False
 
         prompt_text = description or f"Allow '{action}'?"
-        approved = self._prompt_fn(prompt_text)
+        result = self._prompt_fn(prompt_text)
+        if asyncio.iscoroutine(result):
+            approved = await result
+        else:
+            approved = result
 
         if approved and tier == PermissionTier.SESSION:
             self._session_approvals.add(action)

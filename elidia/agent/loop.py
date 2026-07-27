@@ -210,7 +210,7 @@ class AgentLoop:
 
                 if self._permissions:
                     action_type = self._classify_tool_action(tool_name, tool_args)
-                    allowed = self._permissions.check(
+                    allowed = await self._permissions.check(
                         action=action_type,
                         session_id=session_id,
                         path=tool_args.get("path"),
