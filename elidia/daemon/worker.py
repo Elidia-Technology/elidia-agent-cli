@@ -122,6 +122,8 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return _handle_forget_memory(request)
     if cmd == "get_trust_stats":
         return _handle_get_trust_stats(state)
+    if cmd == "list_local_models":
+        return await _handle_list_local_models()
     if cmd == "permission_response":
         return _handle_permission_response(state, request)
     if cmd == "pending_permissions":
@@ -495,6 +497,48 @@ def _build_research_stream_handler():
     return handler
 
 
+async def _handle_list_local_models() -> dict[str, Any]:
+    logger.debug("Entered into _handle_list_local_models")
+    from elidia.models.local import list_local_models
+    try:
+        models = await list_local_models()
+        return {"ok": True, "models": [
+            {"name": m.name, "parameter_size": m.parameter_size,
+             "context_length": m.context_length, "capabilities": m.capabilities}
+            for m in models
+        ]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _build_local_chat_stream_handler():
+    """Streaming handler for local (Ollama) chat — no API key needed,
+    no network beyond localhost. Same event format as the regular chat
+    stream so the Desktop UI renders identically."""
+    logger.debug("Entered into _build_local_chat_stream_handler")
+
+    async def handler(request: dict[str, Any]):
+        messages_raw = request.get("messages", [])
+        model = request.get("model", "qwen3:1.7b")
+        if not messages_raw:
+            yield {"event": "error", "data": "no messages"}
+            return
+
+        from elidia.api.client import ChatMessage
+        from elidia.models.local import chat_local
+
+        msgs = [ChatMessage(role=m.get("role","user"), content=m.get("content","")) for m in messages_raw]
+        try:
+            yield {"event": "thinking", "data": {"model": model, "provider": "ollama-local"}}
+            content = await chat_local(msgs, model=model)
+            yield {"event": "content", "data": content}
+        except Exception as e:
+            yield {"event": "error", "data": str(e)}
+        yield {"event": "done", "data": None}
+
+    return handler
+
+
 async def _build_chat_stream_handler(state: WorkerState):
     """Lazily construct a streaming handler for the 'chat' IPC command.
 
@@ -672,6 +716,8 @@ async def _run() -> None:
         cmd = request.get("cmd", "")
         if cmd == "research_start":
             handler = _build_research_stream_handler()
+        elif cmd == "chat_local":
+            handler = _build_local_chat_stream_handler()
         else:
             handler = await _build_chat_stream_handler(state)
         async for event in handler(request):
