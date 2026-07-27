@@ -42,10 +42,22 @@ class WebhookConfig:
 
 
 @dataclass
+class CodingTaskConfig:
+    name: str
+    description: str  # natural-language task prompt
+    schedule_cron: str = ""  # cron expression, e.g. "0 */6 * * *"
+    working_dir: str = "."
+    model: str = "claude-sonnet-4-6"
+    max_iterations: int = 25
+    auto_commit: bool = False  # whether to git commit changes on success
+
+
+@dataclass
 class DaemonConfig:
     watchers: list[WatcherConfig] = field(default_factory=list)
     schedules: list[ScheduleConfig] = field(default_factory=list)
     webhooks: list[WebhookConfig] = field(default_factory=list)
+    coding_tasks: list[CodingTaskConfig] = field(default_factory=list)
 
 
 def load_daemon_config(path: Path) -> DaemonConfig:
@@ -75,9 +87,20 @@ def load_daemon_config(path: Path) -> DaemonConfig:
         WebhookConfig(name=w["name"], path=w.get("path", "/webhook"), port=w.get("port", 8765))
         for w in raw.get("webhook", [])
     ]
+    coding_tasks = [
+        CodingTaskConfig(
+            name=c["name"], description=c["description"],
+            schedule_cron=c.get("schedule_cron", ""),
+            working_dir=c.get("working_dir", "."),
+            model=c.get("model", "claude-sonnet-4-6"),
+            max_iterations=c.get("max_iterations", 25),
+            auto_commit=c.get("auto_commit", False),
+        )
+        for c in raw.get("coding_task", [])
+    ]
 
-    logger.info(f"Loaded daemon config: {len(watchers)} watchers, {len(schedules)} schedules, {len(webhooks)} webhooks")
-    return DaemonConfig(watchers=watchers, schedules=schedules, webhooks=webhooks)
+    logger.info(f"Loaded daemon config: {len(watchers)} watchers, {len(schedules)} schedules, {len(webhooks)} webhooks, {len(coding_tasks)} coding tasks")
+    return DaemonConfig(watchers=watchers, schedules=schedules, webhooks=webhooks, coding_tasks=coding_tasks)
 
 
 def write_example_daemon_config(path: Path) -> None:
@@ -100,6 +123,14 @@ def write_example_daemon_config(path: Path) -> None:
         "# [[webhook]]\n"
         '# name = "deploy-hook"\n'
         '# path = "/webhook"\n'
-        "# port = 8765\n",
+        "# port = 8765\n\n"
+        "# [[coding_task]]\n"
+        '# name = "auto-fix-lints"\n'
+        '# description = "Fix all lint errors in the current project and commit the changes"\n'
+        '# schedule_cron = "0 */6 * * *"\n'
+        '# working_dir = "."\n'
+        '# model = "claude-sonnet-4-6"\n'
+        '# max_iterations = 25\n'
+        "# auto_commit = false\n",
         encoding="utf-8",
     )

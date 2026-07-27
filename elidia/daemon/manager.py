@@ -171,6 +171,36 @@ class DaemonManager:
             self._callbacks[task_id] = callback
         return task_id
 
+    def add_coding_task(
+        self,
+        name: str,
+        description: str,
+        cron: str,
+        working_dir: str = ".",
+        model: str = "claude-sonnet-4-6",
+        max_iterations: int = 25,
+        auto_commit: bool = False,
+        callback: Callable[..., Coroutine[Any, Any, None]] | None = None,
+    ) -> str:
+        """Register an autonomous coding task (AIUT-2155). Runs on a cron
+        schedule — the callback receives the task config and should
+        initialise an AgentLoop, run the agent against the description,
+        and report results."""
+        logger.debug(f"Entered into add_coding_task: name={name}, cron={cron}")
+        import asyncio as _asyncio
+        task_id = f"code_{name}_{int(time.time())}"
+        task = DaemonTask(
+            id=task_id, name=name, type="coding",
+            config={"description": description, "cron": cron, "working_dir": working_dir, "model": model, "max_iterations": max_iterations, "auto_commit": auto_commit},
+        )
+        self._tasks[task_id] = task
+
+        async def _wrapped_callback():
+            if callback:
+                await callback(name=name, description=description, working_dir=working_dir, model=model, max_iterations=max_iterations, auto_commit=auto_commit)
+
+        return self.add_cron_schedule(name=name, cron=cron, command="", callback=_wrapped_callback)
+
     async def remove_task(self, task_id: str) -> bool:
         logger.debug(f"Entered into remove_task: id={task_id}")
         if task_id in self._handles:

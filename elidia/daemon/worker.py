@@ -263,6 +263,11 @@ def _handle_get_daemon_config() -> dict[str, Any]:
                 {"name": h.name, "path": h.path, "port": h.port}
                 for h in config.webhooks
             ],
+            "coding_tasks": [
+                {"name": c.name, "description": c.description, "cron": c.schedule_cron,
+                 "working_dir": c.working_dir, "model": c.model, "auto_commit": c.auto_commit}
+                for c in config.coding_tasks
+            ],
         },
     }
 
@@ -642,6 +647,65 @@ async def _permission_prompt_fn(state: WorkerState, description: str) -> bool:
         state._permission_results.pop(req_id, None)
 
 
+async def _run_coding_task(**kwargs) -> None:
+    """Callback for autonomous coding tasks (AIUT-2155). Initialises a fresh
+    AgentLoop in AUTONOMOUS mode, runs the agent against the task description,
+    optionally commits changes, and logs the result."""
+    name = kwargs.get("name", "unnamed")
+    description = kwargs.get("description", "")
+    working_dir = kwargs.get("working_dir", ".")
+    model = kwargs.get("model", "claude-sonnet-4-6")
+    max_iterations = kwargs.get("max_iterations", 25)
+    auto_commit = kwargs.get("auto_commit", False)
+    logger.info(f"Coding task '{name}' starting: {description[:100]}")
+
+    from elidia.auth.keychain import get_api_key
+    from elidia.config.settings import load_config
+    from elidia.api.client import AiUtilsClient, ChatMessage
+    from elidia.models.router import ModelRouter
+    from elidia.tools import create_default_registry
+    from elidia.agent.loop import AgentLoop
+
+    api_key = get_api_key()
+    if not api_key:
+        logger.error(f"Coding task '{name}' failed: no API key configured")
+        return
+
+    config = load_config()
+    client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+    tools = create_default_registry()
+    router = ModelRouter()
+    loop = AgentLoop(client=client, tool_registry=tools, model_router=router, max_loops=max_iterations)
+
+    try:
+        messages = [ChatMessage(role="user", content=description)]
+        result_parts: list[str] = []
+        async for event in loop.run(messages, mode="code", forced_model=model):
+            if event.kind == "content" and event.data:
+                result_parts.append(str(event.data))
+        result = "\n".join(result_parts)
+
+        if auto_commit:
+            import subprocess, os
+            os.chdir(working_dir)
+            subprocess.run(["git", "add", "-A"], capture_output=True)
+            commit_msg = f"auto({name}): {description[:72]}"
+            r = subprocess.run(["git", "commit", "-m", commit_msg], capture_output=True)
+            if r.returncode == 0:
+                logger.info(f"Coding task '{name}': changes committed")
+            else:
+                logger.info(f"Coding task '{name}': nothing to commit")
+
+        log_path = ELIDIA_HOME / "coding_tasks.log"
+        with open(log_path, "a") as f:
+            f.write(f"[{name}] {description[:80]} -> {len(result)} chars\n")
+        logger.info(f"Coding task '{name}' completed: {len(result)} chars output")
+    except Exception as e:
+        logger.error(f"Coding task '{name}' failed: {e}")
+    finally:
+        await client.close()
+
+
 async def _ensure_agent_loop(state: WorkerState) -> None:
     """Construct AgentLoop once, on first chat request.  Subsequent calls
     block on _chat_lock so the daemon never runs two concurrent agent loops
@@ -743,6 +807,13 @@ async def _run() -> None:
             state.manager.add_schedule(s.name, s.interval_seconds, command=s.command)
     for h in config.webhooks:
         state.manager.add_webhook(h.name, path=h.path, port=h.port)
+    for c in config.coding_tasks:
+        state.manager.add_coding_task(
+            c.name, c.description, cron=c.schedule_cron,
+            working_dir=c.working_dir, model=c.model,
+            max_iterations=c.max_iterations, auto_commit=c.auto_commit,
+            callback=_run_coding_task,
+        )
 
     await state.manager.start()
 
