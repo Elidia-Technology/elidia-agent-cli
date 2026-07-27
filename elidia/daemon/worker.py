@@ -93,6 +93,8 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return _handle_get_daemon_config()
     if cmd == "get_audit_log":
         return _handle_get_audit_log(request)
+    if cmd == "workflow_run":
+        return await _handle_workflow_run(state, request)
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
@@ -196,6 +198,70 @@ def _handle_get_audit_log(request: dict[str, Any]) -> dict[str, Any]:
         except json.JSONDecodeError:
             pass
     return {"ok": True, "entries": entries}
+
+
+async def _handle_workflow_run(state: WorkerState, request: dict[str, Any]) -> dict[str, Any]:
+    """Execute a workflow from a YAML string. Returns a summary of results,
+    not a streaming response — workflows can have many steps and the caller
+    typically wants the final summary, not per-step progress."""
+    logger.debug("Entered into _handle_workflow_run")
+    yaml_text = request.get("yaml", "")
+    if not yaml_text:
+        return {"ok": False, "error": "missing required field: yaml"}
+
+    from elidia.workflow.engine import WorkflowExecutor, parse_workflow
+    from elidia.api.client import AiUtilsClient
+    from elidia.auth.keychain import get_api_key
+    from elidia.config.settings import load_config
+    from elidia.tools.base import ToolRegistry
+    from elidia.tools import create_default_registry
+
+    try:
+        wf = parse_workflow(yaml_text)
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to parse workflow: {e}"}
+
+    # Build a client only if there's an llm step (same logic as the CLI fix, AIUT-2141)
+    from elidia.workflow.engine import workflow_requires_llm
+    client = None
+    if workflow_requires_llm(wf):
+        api_key = get_api_key()
+        if not api_key:
+            return {"ok": False, "error": "Workflow has llm steps but no API key configured"}
+        config = load_config()
+        client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+
+    # Wire up a tool executor that uses the shared registry
+    registry: ToolRegistry = create_default_registry()
+
+    async def tool_execute_fn(tool_name: str, arguments: dict[str, Any]) -> str:
+        result = await registry.call(tool_name, arguments)
+        return result.content
+
+    executor = WorkflowExecutor(client=client, tool_execute_fn=tool_execute_fn)
+
+    results = []
+    completed = 0
+    failed = 0
+    try:
+        async for event in executor.run(wf):
+            if event.kind == "step_done":
+                results.append(event.data)
+                if event.data.get("status") == "completed":
+                    completed += 1
+                elif event.data.get("status") == "failed":
+                    failed += 1
+    finally:
+        if client is not None:
+            await client.close()
+
+    return {
+        "ok": True,
+        "workflow_name": wf.name,
+        "completed": completed,
+        "failed": failed,
+        "steps": results,
+    }
 
 
 async def _build_chat_stream_handler(state: WorkerState):
