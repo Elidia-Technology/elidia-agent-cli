@@ -42,7 +42,7 @@ STREAM_TIMEOUT_SECONDS = 120.0
 # Commands whose handler yields multiple response lines instead of
 # returning exactly one. Anything not in this set uses the original
 # single-response path unchanged.
-STREAMING_COMMANDS = {"chat"}
+STREAMING_COMMANDS = {"chat", "research_start"}
 
 
 class DaemonIPCServer:

@@ -394,6 +394,42 @@ def _handle_get_trust_stats(state: WorkerState) -> dict[str, Any]:
     return {"ok": True, "promoted_actions": promoted, "note": "Promoted actions skip the permission prompt."}
 
 
+def _build_research_stream_handler():
+    """Streaming handler for the 'research_start' IPC command — wraps
+    ResearchOrchestrator.run() and yields each ResearchEvent as a
+    newline-delimited JSON line over the socket, same framing the chat
+    stream already uses."""
+    logger.debug("Entered into _build_research_stream_handler")
+
+    async def handler(request: dict[str, Any]):
+        question = request.get("question", "")
+        if not question:
+            yield {"event": "error", "data": "missing required field: question"}
+            return
+
+        from elidia.auth.keychain import get_api_key
+        from elidia.config.settings import load_config
+        from elidia.api.client import AiUtilsClient
+        from elidia.research.orchestrator import ResearchOrchestrator, ResearchEvent
+
+        api_key = get_api_key()
+        if not api_key:
+            yield {"event": "error", "data": "No API key configured"}
+            return
+
+        config = load_config()
+        client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+        try:
+            orchestrator = ResearchOrchestrator(client=client)
+            async for event in orchestrator.run(question):
+                yield {"event": event.kind, "data": event.data}
+            yield {"event": "done", "data": None}
+        finally:
+            await client.close()
+
+    return handler
+
+
 async def _build_chat_stream_handler(state: WorkerState):
     """Lazily construct a streaming handler for the 'chat' IPC command.
 
@@ -477,6 +513,19 @@ async def _ensure_agent_loop(state: WorkerState) -> None:
             timeout=getattr(config.api, "timeout_seconds", 60),
         )
         tools = create_default_registry()
+        # Portal tool bridge — registers 111 enterprise tools from the
+        # AiUtils portal, same as the REPL's initialize() path. Non-fatal:
+        # if the portal is unreachable, the daemon still works with the
+        # 36 built-in tools alone.
+        try:
+            from elidia.agent.portal import PortalToolBridge
+            bridge = PortalToolBridge(client)
+            await bridge.discover_tools()
+            bridge.register_portal_tools(tools)
+            logger.info(f"Portal tools registered: {len(tools.list_tools())} total tools available")
+        except Exception as e:
+            logger.warning(f"Portal tool discovery failed (non-fatal): {e}")
+
         router = ModelRouter()
         audit = AuditLogger()
         audit.open()
@@ -533,7 +582,11 @@ async def _run() -> None:
     await state.manager.start()
 
     async def _stream_handler_wrapper(request: dict[str, Any]):
-        handler = await _build_chat_stream_handler(state)
+        cmd = request.get("cmd", "")
+        if cmd == "research_start":
+            handler = _build_research_stream_handler()
+        else:
+            handler = await _build_chat_stream_handler(state)
         async for event in handler(request):
             yield event
 
