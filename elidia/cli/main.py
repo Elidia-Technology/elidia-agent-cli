@@ -703,6 +703,59 @@ def workflow_run(path: str) -> None:
     asyncio.run(_run())
 
 
+# --- Models command ---
+
+@cli.command("models")
+@click.option("--local", is_flag=True, help="Show only locally available models (Ollama)")
+def models_cmd(local: bool) -> None:
+    """List available AI models."""
+    logger.debug(f"Entered into models_cmd: local={local}")
+    if local:
+        from elidia.models.local import list_local_models
+        async def _run():
+            models = await list_local_models()
+            if not models:
+                console.print("[yellow]No local models found. Install Ollama and pull a model.[/yellow]")
+                return
+            console.print(f"\n[bold]Local Models (Ollama)[/bold]\n")
+            for m in models:
+                console.print(f"  [cyan]{m.name}[/cyan]  {m.parameter_size}  {m.context_length} ctx  caps: {', '.join(m.capabilities[:3])}")
+            console.print(f"\n[dim]{len(models)} model(s) available locally[/dim]")
+        return asyncio.run(_run())
+
+    from elidia.auth.keychain import get_api_key
+    from elidia.config.settings import load_config
+    from elidia.api.client import AiUtilsClient
+    api_key = get_api_key()
+    if not api_key:
+        console.print("[red]No API key configured. Run: elidia auth login[/red]")
+        return
+    config = load_config()
+
+    async def _run_remote():
+        client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+        try:
+            models = await client.list_models()
+            if not models:
+                console.print("[yellow]No models returned from API.[/yellow]")
+                return
+            console.print(f"\n[bold]Available Models ({len(models)} total)[/bold]\n")
+            for m in models:
+                name = m.get("id", m.get("name", "?"))
+                provider = m.get("owned_by", m.get("provider", "?"))
+                cost = m.get("pricing", {}).get("input", "?")
+                caps = []
+                if m.get("supports_vision"): caps.append("vision")
+                if m.get("supports_reasoning"): caps.append("reasoning")
+                if m.get("supports_tools"): caps.append("tools")
+                cap_str = f"[dim]({', '.join(caps)})[/dim]" if caps else ""
+                console.print(f"  [cyan]{name}[/cyan] @ [dim]{provider}[/dim] {cap_str}")
+            console.print(f"\n[dim]Use: elidia --model <name> ask '...'  |  /model <name> in REPL[/dim]")
+        finally:
+            await client.close()
+    asyncio.run(_run_remote())
+
+
 # --- RAG subcommands ---
 
 

@@ -124,6 +124,8 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return _handle_get_trust_stats(state)
     if cmd == "list_local_models":
         return await _handle_list_local_models()
+    if cmd == "list_available_models":
+        return await _handle_list_available_models()
     if cmd == "store_api_key":
         return _handle_store_api_key(request)
     if cmd == "store_email_credentials":
@@ -534,6 +536,26 @@ def _handle_store_email_credentials(request: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "missing required fields: address, password"}
     store_email_credentials(address, password, smtp_host, smtp_port, imap_host, imap_port, from_address)
     return {"ok": True}
+
+
+async def _handle_list_available_models() -> dict[str, Any]:
+    """Return full model catalog from AiUtils API — 30+ models with provider, capabilities, pricing."""
+    logger.debug("Entered into _handle_list_available_models")
+    from elidia.auth.keychain import get_api_key
+    from elidia.config.settings import load_config
+    from elidia.api.client import AiUtilsClient
+    api_key = get_api_key()
+    if not api_key:
+        return {"ok": False, "error": "No API key configured"}
+    config = load_config()
+    client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+    try:
+        models = await client.list_models()
+        return {"ok": True, "models": models}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        await client.close()
 
 
 async def _handle_list_local_models() -> dict[str, Any]:
