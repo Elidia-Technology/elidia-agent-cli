@@ -655,11 +655,11 @@ async def _run_coding_task(task=None, **kwargs) -> None:
     Called by DaemonManager._run_schedule as callback(task=task)."""
     cfg = task.config if task else {}
     name = cfg.get("name", "unnamed")
-    description = cfg.get("description", "")
-    working_dir = cfg.get("working_dir", ".")
-    model = cfg.get("model", "claude-sonnet-4-6")
-    max_iterations = cfg.get("max_iterations", 25)
-    auto_commit = cfg.get("auto_commit", False)
+    description = cfg.get("coding_description", "")
+    working_dir = cfg.get("coding_working_dir", ".")
+    model = cfg.get("coding_model", "claude-sonnet-4-6")
+    max_iterations = cfg.get("coding_max_iterations", 25)
+    auto_commit = cfg.get("coding_auto_commit", False)
     logger.info(f"Coding task '{name}' starting: {description[:100]}")
 
     from elidia.auth.keychain import get_api_key

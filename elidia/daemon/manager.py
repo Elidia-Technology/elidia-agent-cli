@@ -195,7 +195,18 @@ class DaemonManager:
         )
         self._tasks[task_id] = task
 
-        return self.add_cron_schedule(name=name, cron_expr=cron, command="echo ok", callback=callback)
+        task_id = self.add_cron_schedule(name=name, cron_expr=cron, command="echo ok", callback=callback)
+        # Store coding-specific config on the cron task so the callback
+        # can read description/model/etc. from task.config
+        coding_task = self._tasks.get(task_id)
+        if coding_task:
+            coding_task.config["coding_description"] = description
+            coding_task.config["coding_working_dir"] = working_dir
+            coding_task.config["coding_model"] = model
+            coding_task.config["coding_max_iterations"] = max_iterations
+            coding_task.config["coding_auto_commit"] = auto_commit
+            coding_task.type = "coding"
+        return task_id
 
     async def remove_task(self, task_id: str) -> bool:
         logger.debug(f"Entered into remove_task: id={task_id}")
