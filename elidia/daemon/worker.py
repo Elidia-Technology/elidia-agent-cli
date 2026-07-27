@@ -95,6 +95,20 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return _handle_get_audit_log(request)
     if cmd == "workflow_run":
         return await _handle_workflow_run(state, request)
+    if cmd == "get_balance":
+        return await _handle_get_balance()
+    if cmd == "list_mcp_servers":
+        return await _handle_list_mcp_servers()
+    if cmd == "list_personas":
+        return _handle_list_personas()
+    if cmd == "list_models":
+        return _handle_list_models()
+    if cmd == "search_memory":
+        return _handle_search_memory(request)
+    if cmd == "forget_memory":
+        return _handle_forget_memory(request)
+    if cmd == "get_trust_stats":
+        return _handle_get_trust_stats(state)
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
@@ -262,6 +276,122 @@ async def _handle_workflow_run(state: WorkerState, request: dict[str, Any]) -> d
         "failed": failed,
         "steps": results,
     }
+
+
+# ---- memory handlers ----
+
+def _handle_search_memory(request: dict[str, Any]) -> dict[str, Any]:
+    logger.debug("Entered into _handle_search_memory")
+    from elidia.memory.store import MemoryStore
+    query = request.get("query", "")
+    limit = request.get("limit", 10)
+    store = MemoryStore()
+    try:
+        store.open()
+        results = store.search_text(query, limit=limit) if query else store.list_memories(limit=limit)
+        return {"ok": True, "entries": [{"key": m.key, "content": m.content[:200], "tier": str(m.tier)} for m in results]}
+    finally:
+        store.close()
+
+
+def _handle_forget_memory(request: dict[str, Any]) -> dict[str, Any]:
+    logger.debug("Entered into _handle_forget_memory")
+    from elidia.memory.store import MemoryStore
+    key = request.get("key", "")
+    if not key:
+        return {"ok": False, "error": "missing required field: key"}
+    store = MemoryStore()
+    try:
+        store.open()
+        n = store.delete_by_key(key)
+        return {"ok": True, "deleted": n}
+    finally:
+        store.close()
+
+
+# ---- MCP handlers ----
+
+async def _handle_list_mcp_servers() -> dict[str, Any]:
+    logger.debug("Entered into _handle_list_mcp_servers")
+    from elidia.mcp.registry import MCPRegistry
+    registry = MCPRegistry()
+    try:
+        await registry.load_and_connect()
+        servers = registry.get_connected_servers()
+        await registry.disconnect_all()
+        return {"ok": True, "servers": {str(k): v for k, v in servers.items()}}
+    except Exception as e:
+        return {"ok": True, "servers": {}, "error": str(e)}
+
+
+# ---- persona + model handlers ----
+
+def _handle_list_personas() -> dict[str, Any]:
+    logger.debug("Entered into _handle_list_personas")
+    from elidia.agent.personas import PersonaEngine
+    engine = PersonaEngine()
+    personas = engine.list_personas()
+    return {"ok": True, "personas": personas, "active": getattr(engine, "active_slug", "")}
+
+
+def _handle_list_models() -> dict[str, Any]:
+    logger.debug("Entered into _handle_list_models")
+    from elidia.models.router import ModelRouter
+    router = ModelRouter()
+    # get_model_for_type returns the best model per task category —
+    # this mirrors what the agent actually routes to (no separate catalog).
+    task_types = ["chat", "code", "reasoning", "creative", "vision", "cheap"]
+    models: dict[str, str] = {}
+    for t in task_types:
+        try:
+            models[t] = router.get_model_for_type(t)
+        except Exception:
+            pass
+    return {"ok": True, "models": models}
+
+
+# ---- balance + budget ----
+
+async def _handle_get_balance() -> dict[str, Any]:
+    logger.debug("Entered into _handle_get_balance")
+    from elidia.auth.keychain import get_api_key
+    from elidia.config.settings import load_config
+    from elidia.api.client import AiUtilsClient
+
+    api_key = get_api_key()
+    if not api_key:
+        return {"ok": False, "error": "No API key configured"}
+    config = load_config()
+    client = AiUtilsClient(api_key=api_key, base_url=config.api.base_url)
+    try:
+        balance = await client.get_balance()
+        return {"ok": True, "balance": balance}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        await client.close()
+
+
+# ---- trust stats ----
+
+def _handle_get_trust_stats(state: WorkerState) -> dict[str, Any]:
+    logger.debug("Entered into _handle_get_trust_stats")
+    if state._agent_loop is None or state._agent_loop._permissions is None:
+        return {"ok": True, "promotions": [], "note": "No chat sessions yet — trust data builds up as you use the agent."}
+    perm = state._agent_loop._permissions
+    trust = getattr(perm, "_trust", None)
+    if trust is None:
+        return {"ok": True, "promotions": [], "note": "Trust engine not initialized."}
+    # TrustEngine tracks per-action approval history internally; expose the
+    # actions that have been promoted (is_promoted returns True).
+    promoted: list[str] = []
+    for action in [
+        "command_exec", "file_write_project", "file_delete", "browser_interact",
+        "db_query", "email_send", "file_read_external",
+    ]:
+        if trust.is_promoted(action):
+            promoted.append(action)
+    return {"ok": True, "promoted_actions": promoted, "note": "Promoted actions skip the permission prompt."}
 
 
 async def _build_chat_stream_handler(state: WorkerState):
