@@ -124,6 +124,10 @@ async def _handle_ipc_request(state: WorkerState, request: dict[str, Any]) -> di
         return _handle_get_trust_stats(state)
     if cmd == "list_local_models":
         return await _handle_list_local_models()
+    if cmd == "store_api_key":
+        return _handle_store_api_key(request)
+    if cmd == "store_email_credentials":
+        return _handle_store_email_credentials(request)
     if cmd == "permission_response":
         return _handle_permission_response(state, request)
     if cmd == "pending_permissions":
@@ -495,6 +499,36 @@ def _build_research_stream_handler():
             await client.close()
 
     return handler
+
+
+def _handle_store_api_key(request: dict[str, Any]) -> dict[str, Any]:
+    """Write an API key to the OS keychain (same as 'elidia auth login').
+    The socket is 0600, same user — no weaker than the keyring itself."""
+    logger.debug("Entered into _handle_store_api_key")
+    from elidia.auth.keychain import store_api_key, validate_api_key
+    key = request.get("key", "")
+    if not key:
+        return {"ok": False, "error": "missing required field: key"}
+    if not validate_api_key(key):
+        return {"ok": False, "error": "invalid key format (must start with ak-dev-)"}
+    store_api_key(key)
+    return {"ok": True}
+
+
+def _handle_store_email_credentials(request: dict[str, Any]) -> dict[str, Any]:
+    logger.debug("Entered into _handle_store_email_credentials")
+    from elidia.auth.keychain import store_email_credentials
+    address = request.get("address", "")
+    password = request.get("password", "")
+    smtp_host = request.get("smtp_host", "")
+    smtp_port = request.get("smtp_port", 587)
+    imap_host = request.get("imap_host", "")
+    imap_port = request.get("imap_port", 993)
+    from_address = request.get("from_address") or address
+    if not address or not password:
+        return {"ok": False, "error": "missing required fields: address, password"}
+    store_email_credentials(address, password, smtp_host, smtp_port, imap_host, imap_port, from_address)
+    return {"ok": True}
 
 
 async def _handle_list_local_models() -> dict[str, Any]:
